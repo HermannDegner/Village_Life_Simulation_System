@@ -11,10 +11,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
-from village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
+from core.village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
 
 # 狩りシステムのインポート
-from hunting_system import HuntingSystem, PreySize, HuntResult, HuntingStyle
+from systems.hunting.hunting_system import HuntingSystem, PreySize, HuntResult, HuntingStyle
 
 class CareAction(Enum):
     """看病行動"""

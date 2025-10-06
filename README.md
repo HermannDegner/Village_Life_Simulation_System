@@ -1,96 +1,167 @@
-# 🏘️ VLSS (Village Life Simulation System) - クイックスタート
+# 🏘️ 構造主観力学（SSD理論）ベース村シミュレーションシステム
 
-## 🚀 すぐに使う
+## 🚀 クイックスタート
 
-### 👑 メインシステム実行
+### 👑 メインデモ実行
 ```bash
-# メイン村シミュレーション
-python integrated_village_simulation.py
+# SSD理論デモンストレーション（推奨）
+python main_demo.py
 
-# 100日間長期テスト  
-python meaning_pressure_100_day_simulation.py
+# 統合村シミュレーション
+python simulation/integrated_village_simulation.py
 ```
 
-## 📁 現在のファイル構成
+## 📁 整理済みファイル構成
 
 ```
-d:\GitHub\VLSS\
-├── 🌟 メインシステム
-│   ├── integrated_village_simulation.py      # 👑 メイン統合シミュレーション
-│   └── meaning_pressure_100_day_simulation.py # ⏳ 100日間テスト
+integrated_village_simulation/
+├── � main_demo.py                    # 👑 SSD理論メインデモ
 │
-├── 🧠 コアエンジン
-│   ├── village_ssd_adapter.py                # SSD Core Engine適用
-│   └── village_meaning_pressure_system.py    # 意味圧学習理論
+├── 🧠 core/                          # コアシステム
+│   ├── village_ssd_adapter.py        # SSD Core Engine統合アダプター
+│   ├── village_meaning_pressure_system.py # 意味圧ベース学習エンジン
+│   └── village_core.py               # 村基幹システム
 │
-├── 🎯 統合活動システム
-│   ├── hunting_system.py                     # 🏹 狩猟 (SSD+意味圧)
-│   ├── relationship_care_system.py           # 💝 看護 (SSD+意味圧)
-│   ├── cooking_integrated_village.py         # 🍳 料理 (SSD+意味圧)  
-│   └── meaning_pressure_carpentry_system.py  # 🔨 大工 (SSD+意味圧)
+├── 🏘️ simulation/                    # シミュレーション本体
+│   ├── integrated_village_simulation.py # 統合村シミュレーション
+│   └── integrated_village_simulation_simple.py # シンプル版
 │
-├── 🔬 実験中
-│   ├── rumor_system.py                       # 噂システム
-│   ├── ssd_formal_alignment.py               # 形式的アライメント
-│   └── village_ssd_formal_adapter.py         # 形式的SSD適用
+├── 🎯 systems/                       # 機能別システム
+│   ├── hunting/                      # � 狩猟システム
+│   │   ├── hunting_system.py         # メイン狩猟システム
+│   │   └── village_hunting.py        # 村統合狩猟機能
+│   ├── caregiving/                   # 💝 看護・ケアシステム
+│   │   └── relationship_care_system.py # 関係性ベース看護
+│   ├── cooking/                      # 🍳 料理システム
+│   │   └── cooking_integrated_village.py # 統合料理システム
+│   ├── carpentry/                    # 🔨 大工・建築システム
+│   │   └── meaning_pressure_carpentry_system.py # 意味圧ベース大工
+│   └── social/                       # 🗣️ 社会システム
+│       ├── rumor_system.py           # 噂・評判システム
+│       └── village_social.py         # 村社会機能
 │
-├── 📦 整理済みフォルダ
-│   ├── archive/                              # 古いファイル
-│   └── tests_and_demos/                      # テスト・デモ
+├── 🧮 ssd_core_engine/               # SSD理論エンジン
+│   └── [SSD Core Engine パッケージ]
 │
 └── 📖 ドキュメント
-    ├── README_ファイル整理.md                # 詳細ファイル構成  
-    └── README.md                             # このファイル
+    ├── README.md                     # このファイル
+    ├── README_ファイル整理.md         # 整理プロセス記録
+    └── 整理完了レポート.md            # 整理完了報告
 ```
 
-## ✨ 統合システムの特徴
+## ✨ SSD理論統合システムの特徴
 
-### 🧠 意味圧ベース学習 (W = p·j - ρj²)
-- **意味圧**: 新規性・複雑さ・社会的影響による学習圧力
-- **学習飽和**: 日常作業で学習効果が減少、緊急・革新時に急成長
-- **自然な専門化**: 個人の特性に基づく自発的な役割分担
+### 🧠 構造主観力学（SSD理論）コア機能
 
-### 🏘️ SSD Core Engine効果
-- **信頼関係**: 成功/失敗による動的な村人間信頼変化
-- **アライメント慣性**: 継続活動による価値観・行動パターンの固定
-- **領域管理**: 専門分野での縄張り・影響圏形成
+- **主観的境界学習**: 経験→境界形成→行動変化の動的サイクル
+- **三層境界構造**: 基層・中核・上層での独立した境界認識プロセス
+- **内側/外側分類**: オブジェクトの主観的境界による自動分類
+- **主観的縄張り形成**: 安全感閾値による個人領域の自然確立
+- **境界強度動的変化**: 成功/失敗体験による境界調整メカニズム
 
-### 🎯 統合された4つの活動
-1. **🏹 狩猟**: 食料確保、リスク管理、チームワーク
-2. **💝 看護**: 健康管理、緊急対応、共感能力
-3. **🍳 料理**: 資源活用、創造性、コミュニティ形成
-4. **🔨 大工**: 建築技術、インフラ整備、村発展
+### 🔬 意味圧ベース学習システム (W = p·j - ρj²)
 
-## 🎮 使用例
+- **意味圧**: 新規性・複雑さ・社会的影響による学習圧力生成
+- **学習飽和**: 慣れた作業での成長率低下、緊急・革新時の急成長
+- **スキル/境界分離**: 技能成長と自信境界の理論的に正確な独立実装
+- **自然な専門化**: 個人特性に基づく自発的役割分担の創発
 
-### 📊 基本シミュレーション
+### 🏘️ 統合された5つの活動システム
+
+1. **🏹 狩猟システム**: 食料確保、負傷リスク、チーム協力、専門化
+2. **💝 看護システム**: 健康管理、負傷治療、共感能力、緊急対応
+3. **🍳 料理システム**: 資源活用、品質向上、コミュニティ形成
+4. **🔨 大工システム**: 建築技術、インフラ整備、村発展基盤
+5. **🗣️ 社会システム**: 噂・評判、信頼関係、集団認識形成
+
+### 🩹 負傷リスク統合システム
+
+- **活動別負傷確率**: 各活動に現実的な負傷リスクを統合
+- **重軽傷区分**: 軽傷・重傷の段階的負傷システム
+- **疲労影響**: 体力状況による負傷確率変動
+- **治療・回復**: 看護システムとの連携による負傷者ケア
+
+## 🎮 使用方法
+
+### � 推奨：SSD理論デモ実行
+
 ```bash
-python integrated_village_simulation.py
-# → 1日単位の詳細村生活シミュレーション
+python main_demo.py
 ```
+**→ 7日間の詳細なSSD理論境界学習プロセス観察**
 
-### 📈 長期分析
-```bash  
-python meaning_pressure_100_day_simulation.py
-# → 100日間の村発展・専門化プロセス観測
-```
+### � 統合シミュレーション実行
 
-### 🔧 個別システムテスト
 ```bash
-# 大工システムのみ
-python meaning_pressure_carpentry_system.py
+python simulation/integrated_village_simulation.py
+```
+**→ 完全統合された村システムでの長期シミュレーション**
 
-# 意味圧システムのみ  
-python meaning_pressure_village_test.py  # tests_and_demos/内
+### 🔧 個別システム開発・テスト
+
+```bash
+# 狩猟システム
+python systems/hunting/hunting_system.py
+
+# 大工システム
+python systems/carpentry/meaning_pressure_carpentry_system.py
+
+# 料理システム
+python systems/cooking/cooking_integrated_village.py
+
+# 看護システム
+python systems/caregiving/relationship_care_system.py
 ```
 
-## 🎯 期待される結果
+## 🎯 観察可能なSSD理論効果
 
-- **自然な職業分化**: 村人が得意分野で専門家に成長
-- **学習飽和効果**: 慣れた作業の成長率低下
-- **緊急時急成長**: 危機・革新時の急速なスキル向上
-- **信頼関係進化**: 協力成功で信頼構築、失敗で悪化
-- **村全体発展**: 個人成長が村全体の繁栄に寄与
+### 🧠 主観的境界学習の実証
+
+- **境界形成プロセス**: NPCが経験を通じて内側/外側を動的に学習
+- **三層独立学習**: 基層・中核・上層での異なる境界認識パターン
+- **主観的縄張り確立**: 安全感閾値到達による個人領域の自然形成
+- **境界強度変化**: 成功/失敗による境界調整の可視化
+
+### 🏘️ 創発的社会現象
+
+- **自然な職業分化**: 意味圧とSSD境界学習による専門化
+- **信頼関係動的進化**: 協力成功で信頼構築、失敗で関係悪化
+- **集団認識形成**: 噂システムによる社会的評判の集合知形成
+- **負傷リスク戦略判断**: 危険性考慮による慎重な行動選択
+
+### 📈 学習システム効果
+
+- **学習飽和**: 慣れた作業での成長率自然低下
+- **緊急時急成長**: 危機・革新時の意味圧による急速スキル向上  
+- **スキル/境界分離**: 技能成長と自信境界の独立した進化
+- **村全体発展**: 個人の境界学習が村全体の繁栄に寄与
 
 ---
-**🏆 現在の統合状況**: 4つの主要活動システムが完全統合済み！
+
+## 🗂️ ファイル構成の特徴
+
+### 📦 モジュール化設計
+
+- **systems/**: 各機能システムが独立したフォルダで管理
+- **core/**: SSDエンジンと意味圧システムの核となる機能
+- **simulation/**: 統合シミュレーション実行環境
+- **ssd_core_engine/**: 構造主観力学理論の実装エンジン
+
+### 🔧 開発・保守の利点
+
+- **機能別分離**: 関連ファイルの検索・編集が容易
+- **拡張性**: 新システム追加が整理された形で可能
+- **並行開発**: 異なるシステムの同時開発をサポート
+- **テスト容易性**: 個別システムのテストが簡単
+
+### 📚 ドキュメント完備
+
+- `README.md`: このメインドキュメント
+- `README_ファイル整理.md`: 整理プロセスの詳細記録
+- `整理完了レポート.md`: 整理作業の完了報告
+
+---
+
+**🏆 SSD理論実証システム完成**: 主観的境界学習による自然なAIエージェント社会の実現！
+
+**📈 整理効果**: 機能別フォルダ構造により開発効率と保守性が大幅向上！

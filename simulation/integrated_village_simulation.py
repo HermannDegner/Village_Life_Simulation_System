@@ -20,13 +20,13 @@ from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 
 # 統合システムのインポート
-from village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
-from village_meaning_pressure_system import VillageMeaningPressureSystem, ActivityType as MeaningActivityType
-from meaning_pressure_carpentry_system import MeaningPressureCarpentrySystem, ConstructionRequest, ConstructionType
-from hunting_system import HuntingSystem, Prey
-from relationship_care_system import RelationshipCareSystem, CareRequest
-from cooking_integrated_village import EnhancedCookingSystem, CookingRequest
-from rumor_system import RumorSystem, RumorType
+from core.village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
+from core.village_meaning_pressure_system import VillageMeaningPressureSystem, ActivityType as MeaningActivityType
+from systems.carpentry.meaning_pressure_carpentry_system import MeaningPressureCarpentrySystem, ConstructionRequest, ConstructionType
+from systems.hunting.hunting_system import HuntingSystem, Prey
+from systems.caregiving.relationship_care_system import RelationshipCareSystem, CareRequest
+from systems.cooking.cooking_integrated_village import EnhancedCookingSystem, CookingRequest
+from systems.social.rumor_system import RumorSystem, RumorType
 
 @dataclass
 class Villager:
@@ -327,18 +327,13 @@ class IntegratedVillageSimulation:
                     'hunt_duration': hunt_duration
                 })
                 
-                # 成功時でも軽い怪我のリスク（失敗時より低確率）
-                success_injury_risk = 0.03 + hunter.fatigue_level * 0.05  # 3-8%程度
-                severe_injury_risk = 0.005 + hunter.fatigue_level * 0.01  # 0.5-1.5%程度
+                # 狩猟活動の負傷リスク適用
+                injury_result = self._apply_injury_risk('hunting', True, hunter_name)
+                events[-1].update(injury_result)
                 
-                if random.random() < severe_injury_risk:
-                    # 稀に重傷
-                    self._injure_villager(hunter_name, severe=True)
-                    events[-1]['severe_injury_occurred'] = True
-                elif random.random() < success_injury_risk:
-                    # 通常の軽傷
-                    self._injure_villager(hunter_name)
-                    events[-1]['injury_occurred'] = True
+                if injury_result['injury_occurred']:
+                    injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
+                    events[-1]['injury_message'] = f"💥 代償: 狩猟中に{injury_type}してしまった"
                 
                 # 意味圧システムにスキル向上を記録
                 hunting_context = {
@@ -356,19 +351,11 @@ class IntegratedVillageSimulation:
                 self.ssd_adapter.update_experience(hunter_name, "hunting", True, food_gained / 3.0)
                 
             else:
-                # 失敗時怪我のリスク（成功時より高確率）
-                injury_risk = 0.08 + hunter.fatigue_level * 0.12  # 8-20%程度
-                severe_injury_risk = 0.02 + hunter.fatigue_level * 0.03  # 2-5%程度
+                # 狩猟失敗時の負傷リスク適用
+                injury_result = self._apply_injury_risk('hunting', False, hunter_name)
                 
-                severe_injury_occurred = random.random() < severe_injury_risk
-                injury_occurred = random.random() < injury_risk
-                
-                if severe_injury_occurred:
-                    # 重傷
-                    self._injure_villager(hunter_name, severe=True)
-                elif injury_occurred:
-                    # 軽傷
-                    self._injure_villager(hunter_name)
+                if injury_result['injury_occurred']:
+                    injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
                 
                 # SSD理論: 狩猟失敗による主観的境界学習
                 self.ssd_adapter.update_experience(hunter_name, "hunting", False, 0.3)
@@ -377,14 +364,20 @@ class IntegratedVillageSimulation:
                 if random.random() < 0.3:  # 30%の確率で失敗の噂が広がる
                     self._spread_hunting_rumor(hunter_name, False, hunt_duration, 0.5)
                 
-                events.append({
+                failure_event = {
                     'type': VillageEvent.HUNTING_FAILURE,
                     'hunter': hunter_name,
                     'prey': "小動物",
                     'energy_used': energy_consumption,
-                    'injury_occurred': injury_occurred,
                     'hunt_duration': hunt_duration
-                })
+                }
+                failure_event.update(injury_result)
+                
+                if injury_result['injury_occurred']:
+                    injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
+                    failure_event['injury_message'] = f"💥 さらに: 失敗により{injury_type}してしまった"
+                
+                events.append(failure_event)
         
         return events
     
@@ -451,13 +444,23 @@ class IntegratedVillageSimulation:
             # SSD理論: 料理成功による主観的境界学習
             self.ssd_adapter.update_experience(cook_name, "cooking", True, 0.7)
             
-            events.append({
+            # 料理活動の負傷リスク適用
+            injury_result = self._apply_injury_risk('cooking', True, cook_name)
+            
+            cooking_event = {
                 'type': VillageEvent.MEAL_PREPARED,
                 'cook': cook_name,
                 'meal_quality': 0.7,  # 標準的な品質
                 'cooking_inertia': 0.1,
                 'ingredients_used': ingredients_used
-            })
+            }
+            cooking_event.update(injury_result)
+            
+            if injury_result['injury_occurred']:
+                injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
+                cooking_event['injury_message'] = f"💥 代償: 料理中に{injury_type}してしまった"
+            
+            events.append(cooking_event)
         
         return events
     
@@ -599,6 +602,9 @@ class IntegratedVillageSimulation:
         quality = result.get('quality', 0.5)
         self.ssd_adapter.update_experience(carpenter_name, "carpentry", success, quality)
         
+        # 大工活動の負傷リスク適用（責任者）
+        injury_result = self._apply_injury_risk('carpentry', success, carpenter_name)
+        
         # 助手もエネルギー消費と意味圧記録
         if is_multi_day:
             ongoing_projects = self.carpentry_system.get_ongoing_projects_status()
@@ -620,6 +626,12 @@ class IntegratedVillageSimulation:
                             self.ssd_adapter.update_experience(helper_name, "carpentry", success, quality * 0.7)
                             # 助手と責任者の協力関係による相互境界学習
                             self.ssd_adapter.update_relationship(helper_name, carpenter_name, "cooperative_construction")
+                            
+                            # 助手の負傷リスク（責任者より低めのリスク）
+                            helper_injury = self._apply_injury_risk('construction', success, helper_name)
+                            if helper_injury['injury_occurred']:
+                                injury_type = "重傷" if helper_injury['severe_injury_occurred'] else "軽傷"
+                                print(f"      💥 助手事故: {helper_name}が建設作業中に{injury_type}しました")
         
         # 結果処理
         if result.get('success', True):
@@ -653,6 +665,11 @@ class IntegratedVillageSimulation:
                 'energy_used': energy_consumption,
                 'work_duration': work_duration
             }
+            event_data.update(injury_result)
+            
+            if injury_result['injury_occurred']:
+                injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
+                event_data['injury_message'] = f"💥 代償: 建設作業中に{injury_type}してしまった"
             
             # マルチデイプロジェクト用の追加情報
             if is_multi_day:
@@ -759,6 +776,9 @@ class IntegratedVillageSimulation:
                 relationship_type = "received_excellent_care" if care_success else "received_poor_care"
                 self.ssd_adapter.update_relationship(care_event.patient, care_event.caregiver, relationship_type)
                 
+                # 看護活動の負傷リスク適用
+                injury_result = self._apply_injury_risk('caregiving', care_success, care_event.caregiver)
+                
                 # 看護に関する噂を広める
                 self._spread_care_rumor(
                     care_event.caregiver, 
@@ -767,13 +787,20 @@ class IntegratedVillageSimulation:
                     care_event.effectiveness
                 )
                 
-                events.append({
+                care_event_data = {
                     'type': VillageEvent.CARE_PROVIDED,
                     'caregiver': care_event.caregiver,
                     'patient': care_event.patient,
                     'care_quality': care_event.effectiveness,
                     'caregiving_inertia': care_event.relationship_after - care_event.relationship_before
-                })
+                }
+                care_event_data.update(injury_result)
+                
+                if injury_result['injury_occurred']:
+                    injury_type = "重傷" if injury_result['severe_injury_occurred'] else "軽傷"
+                    care_event_data['injury_message'] = f"💥 代償: 看護中に{injury_type}してしまった"
+                
+                events.append(care_event_data)
         
         return events
     
@@ -898,6 +925,10 @@ class IntegratedVillageSimulation:
             interaction_type = "positive_rumor_sharing" if success else "negative_rumor_sharing"
             self.ssd_adapter.update_relationship(witness, listener, interaction_type)
             self.ssd_adapter.update_relationship(witness, hunter_name, f"witnessed_{'success' if success else 'failure'}")
+            
+            # 社会的承認による自信向上（スキル≠境界の分離）
+            if success:
+                self.ssd_adapter.update_social_recognition(hunter_name, witness, "hunting", 0.6)
     
     def _spread_carpentry_rumor(self, carpenter_name: str, success: bool, project_name: str, quality: float = 0.0):
         """大工作業に関する噂を広める"""
@@ -924,6 +955,10 @@ class IntegratedVillageSimulation:
             interaction_type = "positive_craft_rumor" if success else "negative_craft_rumor"
             self.ssd_adapter.update_relationship(speaker, listener, interaction_type)
             self.ssd_adapter.update_relationship(speaker, carpenter_name, f"observed_{'good' if success else 'poor'}_crafting")
+            
+            # 社会的承認による自信向上
+            if success:
+                self.ssd_adapter.update_social_recognition(carpenter_name, speaker, "carpentry", intensity * 0.8)
     
     def _spread_care_rumor(self, caregiver_name: str, patient_name: str, success: bool, care_quality: float):
         """看護に関する噂を広める"""
@@ -956,6 +991,11 @@ class IntegratedVillageSimulation:
                     # 患者が語る場合は直接経験による強い境界形成
                     care_experience = "received_excellent_care" if success else "received_poor_care"
                     self.ssd_adapter.update_relationship(speaker, caregiver_name, care_experience)
+                    
+                # 社会的承認による自信向上
+                if success:
+                    recognition_strength = 0.8 if speaker == patient_name else 0.6  # 患者からの評価は重い
+                    self.ssd_adapter.update_social_recognition(caregiver_name, speaker, "caregiving", recognition_strength)
     
     def _update_villager_energy(self, name: str, change: float):
         """村人のエネルギー更新"""
@@ -964,6 +1004,88 @@ class IntegratedVillageSimulation:
                 villager.energy = max(0.0, min(1.0, villager.energy + change))
                 break
     
+    def _get_villager_by_name(self, name: str):
+        """名前で村人を取得"""
+        for villager in self.villagers:
+            if villager.name == name:
+                return villager
+        return None
+
+    def _calculate_injury_risk(self, activity_type: str, success: bool, villager_name: str) -> dict:
+        """活動別の負傷リスク計算"""
+        villager = self._get_villager_by_name(villager_name)
+        base_fatigue = villager.fatigue_level if villager else 0.0
+        
+        # 活動別基本リスク設定
+        risk_profiles = {
+            'hunting': {
+                'light_injury': (0.03, 0.05) if success else (0.08, 0.12),  # (base, fatigue_multiplier)
+                'severe_injury': (0.005, 0.01) if success else (0.02, 0.03),
+                'description': '野生動物との接触、転倒、道具事故'
+            },
+            'carpentry': {
+                'light_injury': (0.05, 0.08) if success else (0.12, 0.15),  # 工具使用リスク
+                'severe_injury': (0.01, 0.02) if success else (0.04, 0.06),  # 重機具事故
+                'description': '工具による切り傷、落下物、重機事故'
+            },
+            'cooking': {
+                'light_injury': (0.02, 0.03) if success else (0.05, 0.07),  # 火傷、刃物
+                'severe_injury': (0.001, 0.005) if success else (0.01, 0.02),  # 重度火傷
+                'description': '火傷、刃物による切り傷、熱湯事故'
+            },
+            'caregiving': {
+                'light_injury': (0.01, 0.02) if success else (0.03, 0.04),  # 患者移動時
+                'severe_injury': (0.0005, 0.001) if success else (0.002, 0.005),  # 感染等
+                'description': '患者移動時の負傷、感染リスク'
+            },
+            'construction': {
+                'light_injury': (0.06, 0.10) if success else (0.15, 0.20),  # 建設現場リスク
+                'severe_injury': (0.02, 0.03) if success else (0.06, 0.08),  # 重大事故
+                'description': '高所落下、重量物事故、建材による負傷'
+            }
+        }
+        
+        profile = risk_profiles.get(activity_type, risk_profiles['hunting'])  # デフォルト
+        
+        light_base, light_fatigue = profile['light_injury']
+        severe_base, severe_fatigue = profile['severe_injury']
+        
+        light_risk = light_base + base_fatigue * light_fatigue
+        severe_risk = severe_base + base_fatigue * severe_fatigue
+        
+        return {
+            'light_injury_risk': min(0.25, light_risk),  # 最大25%
+            'severe_injury_risk': min(0.10, severe_risk),  # 最大10%
+            'description': profile['description']
+        }
+    
+    def _apply_injury_risk(self, activity_type: str, success: bool, villager_name: str) -> dict:
+        """負傷リスクの適用と結果返却"""
+        risks = self._calculate_injury_risk(activity_type, success, villager_name)
+        
+        injury_result = {
+            'injury_occurred': False,
+            'severe_injury_occurred': False,
+            'injury_type': None,
+            'description': risks['description']
+        }
+        
+        if random.random() < risks['severe_injury_risk']:
+            self._injure_villager(villager_name, severe=True)
+            injury_result.update({
+                'injury_occurred': True,
+                'severe_injury_occurred': True,
+                'injury_type': 'severe'
+            })
+        elif random.random() < risks['light_injury_risk']:
+            self._injure_villager(villager_name)
+            injury_result.update({
+                'injury_occurred': True,
+                'injury_type': 'light'
+            })
+        
+        return injury_result
+
     def _injure_villager(self, name: str, severe: bool = False):
         """村人に怪我を負わせる"""
         for villager in self.villagers:

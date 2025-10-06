@@ -10,13 +10,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
-from village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
+from core.village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
 
 # 既存システムのインポート
 # from integrated_village_simulation import IntegratedVillageSystem, VillageEvent, VillageStatus  # 循環インポート回避のためコメントアウト
 # ActivityTypeは現在はvillage_meaning_pressure_systemからインポート
-from village_meaning_pressure_system import ActivityType
-from rumor_system import RumorSystem, RumorType
+from core.village_meaning_pressure_system import ActivityType
+from systems.social.rumor_system import RumorSystem, RumorType
 
 class VillageEvent(Enum):
     """村の出来事"""
@@ -698,7 +698,7 @@ class EnhancedVillageWithCooking:  # 循環インポート回避のため継承�
     
     def __init__(self):
         # 循環インポート回避のため遅延インポート
-        from integrated_village_simulation import IntegratedVillageSimulation
+        from simulation.integrated_village_simulation import IntegratedVillageSimulation
         IntegratedVillageSimulation.__init__(self)
         self.cooking_system = None  # 後で初期化
     
@@ -706,7 +706,7 @@ class EnhancedVillageWithCooking:  # 循環インポート回避のため継承�
         """料理システム統合初期化"""
         
         # ベースシステム初期化 (遅延インポート)
-        from integrated_village_simulation import IntegratedVillageSimulation
+        from simulation.integrated_village_simulation import IntegratedVillageSimulation
         IntegratedVillageSimulation.initialize_integrated_village(self, village_size)
         
         # 料理システム初期化

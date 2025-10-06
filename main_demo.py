@@ -17,8 +17,8 @@ AIエージェントシステムの実証実験です。
 - 個別の主観的境界分析: 各NPCの異なる境界認識パターン
 """
 
-from integrated_village_simulation import IntegratedVillageSimulation
-from village_core import VillageEvent
+from simulation.integrated_village_simulation import IntegratedVillageSimulation
+from core.village_core import VillageEvent
 
 def run_village_demo():
     """構造主観力学（SSD理論）ベースAIエージェント デモンストレーション"""

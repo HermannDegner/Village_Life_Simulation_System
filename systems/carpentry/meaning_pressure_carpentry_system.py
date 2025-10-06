@@ -10,8 +10,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
-from village_meaning_pressure_system import VillageMeaningPressureSystem, ActivityType as MeaningActivityType
-from village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
+from core.village_meaning_pressure_system import VillageMeaningPressureSystem, ActivityType as MeaningActivityType
+from core.village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
 
 @dataclass
 class CarpentryReputation:
