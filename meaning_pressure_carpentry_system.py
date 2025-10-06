@@ -56,6 +56,31 @@ class ConstructionProject:
     village_benefit: float         # 村への恩恵
     innovation_potential: float = 0.0  # 革新的要素
     collaboration_needed: bool = False  # 協力が必要か
+    
+    # マルチデイプロジェクト管理
+    total_work_days: int = 1        # 必要作業日数
+    daily_work_hours: float = 4.0   # 1日当たり作業時間
+
+@dataclass
+class OngoingProject:
+    """進行中プロジェクト"""
+    project: ConstructionProject
+    lead_carpenter: str
+    helpers: List[str] = field(default_factory=list)
+    start_day: int = 0
+    days_worked: int = 0
+    total_progress: float = 0.0
+    daily_progress: List[float] = field(default_factory=list)
+    quality_accumulation: float = 0.0
+    materials_used: float = 0.0
+    
+    def is_complete(self) -> bool:
+        """プロジェクト完了判定"""
+        return self.days_worked >= self.project.total_work_days
+    
+    def get_completion_percentage(self) -> float:
+        """完了率取得"""
+        return min(100.0, (self.total_progress / self.project.total_work_days) * 100)
 
 class MeaningPressureCarpentrySystem:
     """意味圧ベース大工システム（SSD Core Engine統合版）"""
@@ -63,6 +88,11 @@ class MeaningPressureCarpentrySystem:
     def __init__(self):
         self.carpenter_reputations: Dict[str, CarpentryReputation] = {}
         self.construction_requests: List[ConstructionRequest] = []
+        
+        # マルチデイプロジェクト管理
+        self.ongoing_projects: List[OngoingProject] = []
+        self.completed_projects: List[OngoingProject] = []
+        self.project_counter: int = 0
         
         # SSD Core Engine の初期化
         self.ssd_adapter = VillageSSDAdapter("meaning_pressure_carpentry_system")
@@ -75,54 +105,66 @@ class MeaningPressureCarpentrySystem:
             "集会所": 0.2,    # 集会所品質
         }
         
-        # 建築プロジェクトデータベース（意味圧考慮版）
+        # 建築プロジェクトデータベース（マルチデイ対応版）
         self.project_database = {
-            # 日常修理（低意味圧）
+            # 日常修理（1日）
             "壁補修": ConstructionProject(
-                "壁補修", ConstructionType.REPAIR, 0.2, 0.5, 0.3, 0.1, 0.1, 0.0, False
+                "壁補修", ConstructionType.REPAIR, 0.2, 0.5, 0.3, 0.1, 0.1, 0.0, False, 1, 3.0
             ),
             "屋根修理": ConstructionProject(
-                "屋根修理", ConstructionType.REPAIR, 0.3, 0.6, 0.4, 0.2, 0.15, 0.1, False
+                "屋根修理", ConstructionType.REPAIR, 0.3, 0.6, 0.4, 0.2, 0.15, 0.1, False, 1, 4.0
             ),
             
-            # 緊急修理（高意味圧）
+            # 緊急修理（1-2日）
             "緊急屋根修理": ConstructionProject(
-                "緊急屋根修理", ConstructionType.EMERGENCY_REPAIR, 0.8, 0.7, 0.6, 0.3, 0.4, 0.0, True
+                "緊急屋根修理", ConstructionType.EMERGENCY_REPAIR, 0.8, 0.7, 0.6, 0.3, 0.4, 0.0, True, 1, 6.0
             ),
             "災害復旧": ConstructionProject(
-                "災害復旧", ConstructionType.EMERGENCY_REPAIR, 0.9, 0.8, 1.0, 0.5, 0.6, 0.2, True
+                "災害復旧", ConstructionType.EMERGENCY_REPAIR, 0.9, 0.8, 1.0, 0.5, 0.6, 0.2, True, 2, 8.0
             ),
             
-            # 創造的建築（高意味圧）
+            # 住居建築（3-5日）
             "革新的住居": ConstructionProject(
-                "革新的住居", ConstructionType.HOUSING, 0.8, 0.9, 1.5, 1.2, 0.5, 0.7, True
+                "革新的住居", ConstructionType.HOUSING, 0.8, 0.9, 1.5, 1.2, 0.5, 0.7, True, 5, 6.0
             ),
             "多目的作業場": ConstructionProject(
-                "多目的作業場", ConstructionType.HOUSING, 0.7, 0.8, 1.2, 1.0, 0.4, 0.6, True
+                "多目的作業場", ConstructionType.HOUSING, 0.7, 0.8, 1.2, 1.0, 0.4, 0.6, True, 4, 5.0
+            ),
+            "標準的住居": ConstructionProject(
+                "標準的住居", ConstructionType.HOUSING, 0.5, 0.7, 1.0, 0.8, 0.3, 0.4, False, 3, 5.0
             ),
             
-            # 村全体インフラ（最高意味圧）
+            # 大規模インフラ（7-14日）
             "村の大橋": ConstructionProject(
-                "村の大橋", ConstructionType.INFRASTRUCTURE, 0.9, 0.9, 2.0, 1.5, 0.8, 0.8, True
+                "村の大橋", ConstructionType.INFRASTRUCTURE, 0.9, 0.9, 2.0, 1.5, 0.8, 0.8, True, 14, 6.0
             ),
             "共同作業場": ConstructionProject(
-                "共同作業場", ConstructionType.INFRASTRUCTURE, 0.8, 0.8, 1.8, 1.2, 0.7, 0.7, True
+                "共同作業場", ConstructionType.INFRASTRUCTURE, 0.8, 0.8, 1.8, 1.2, 0.7, 0.7, True, 10, 5.0
+            ),
+            "村の城壁": ConstructionProject(
+                "村の城壁", ConstructionType.INFRASTRUCTURE, 1.0, 0.9, 3.0, 2.0, 1.0, 0.9, True, 21, 8.0
+            ),
+            "巨大穀物庫": ConstructionProject(
+                "巨大穀物庫", ConstructionType.INFRASTRUCTURE, 0.7, 0.8, 2.5, 1.8, 0.9, 0.6, True, 12, 6.0
             ),
             
-            # 日常家具（低-中意味圧）
+            # 日常家具（1日）
             "木製椅子": ConstructionProject(
-                "木製椅子", ConstructionType.FURNITURE, 0.3, 0.6, 0.3, 0.2, 0.1, 0.1, False
+                "木製椅子", ConstructionType.FURNITURE, 0.3, 0.6, 0.3, 0.2, 0.1, 0.1, False, 1, 2.0
             ),
             "芸術的家具": ConstructionProject(
-                "芸術的家具", ConstructionType.FURNITURE, 0.6, 0.8, 0.8, 0.4, 0.3, 0.5, False
+                "芸術的家具", ConstructionType.FURNITURE, 0.6, 0.8, 0.8, 0.4, 0.3, 0.5, False, 2, 4.0
             ),
             
-            # 特殊道具（中-高意味圧）
+            # 特殊道具（1-3日）
             "精密狩猟道具": ConstructionProject(
-                "精密狩猟道具", ConstructionType.TOOL_MAKING, 0.7, 0.9, 0.8, 0.3, 0.4, 0.6, False
+                "精密狩猟道具", ConstructionType.TOOL_MAKING, 0.7, 0.9, 0.8, 0.3, 0.4, 0.6, False, 2, 6.0
             ),
             "革新農具": ConstructionProject(
-                "革新農具", ConstructionType.TOOL_MAKING, 0.6, 0.8, 0.6, 0.2, 0.3, 0.5, False
+                "革新農具", ConstructionType.TOOL_MAKING, 0.6, 0.8, 0.6, 0.2, 0.3, 0.5, False, 3, 4.0
+            ),
+            "職人道具セット": ConstructionProject(
+                "職人道具セット", ConstructionType.TOOL_MAKING, 0.8, 0.9, 1.2, 0.6, 0.5, 0.7, True, 5, 5.0
             ),
         }
         
@@ -443,10 +485,188 @@ class MeaningPressureCarpentrySystem:
         skilled.sort(key=lambda name: self.carpenter_reputations[name].reputation_score, reverse=True)
         return skilled
     
+    def start_multi_day_project(self, carpenter_name: str, request: ConstructionRequest, 
+                               current_day: int, helpers: List[str] = None) -> OngoingProject:
+        """マルチデイプロジェクト開始"""
+        project = self._select_project_for_request(request)
+        
+        ongoing = OngoingProject(
+            project=project,
+            lead_carpenter=carpenter_name,
+            helpers=helpers or [],
+            start_day=current_day,
+            days_worked=0,
+            total_progress=0.0,
+            daily_progress=[],
+            quality_accumulation=0.0,
+            materials_used=0.0
+        )
+        
+        self.ongoing_projects.append(ongoing)
+        self.project_counter += 1
+        
+        print(f"🏗️ 【新規プロジェクト開始】")
+        print(f"   📋 {project.name} (予定{project.total_work_days}日間)")
+        print(f"   👷 責任者: {carpenter_name}")
+        if helpers:
+            print(f"   🤝 助手: {', '.join(helpers)}")
+        
+        return ongoing
+    
+    def continue_project_work(self, ongoing_project: OngoingProject, 
+                            meaning_pressure_system: VillageMeaningPressureSystem, 
+                            current_day: int) -> Dict[str, Any]:
+        """進行中プロジェクトの作業継続"""
+        project = ongoing_project.project
+        carpenter_name = ongoing_project.lead_carpenter
+        
+        # 今日の作業効率計算（疲労、協力者などを考慮）
+        base_efficiency = 1.0
+        
+        # 協力者によるボーナス
+        if ongoing_project.helpers:
+            collaboration_bonus = min(0.5, len(ongoing_project.helpers) * 0.15)
+            base_efficiency += collaboration_bonus
+        
+        # 継続プロジェクトによる習熟ボーナス
+        if ongoing_project.days_worked > 2:
+            familiarity_bonus = min(0.3, ongoing_project.days_worked * 0.05)
+            base_efficiency += familiarity_bonus
+        
+        # 作業成功判定
+        success_rate = min(0.9, 0.5 + base_efficiency * 0.3)
+        success = random.random() < success_rate
+        
+        # 今日の進捗計算
+        if success:
+            daily_progress = base_efficiency * random.uniform(0.8, 1.2)
+            quality_gain = project.base_quality * daily_progress * random.uniform(0.9, 1.1)
+        else:
+            daily_progress = base_efficiency * random.uniform(0.3, 0.6)
+            quality_gain = project.base_quality * daily_progress * 0.7
+        
+        # プロジェクト進捗更新
+        ongoing_project.days_worked += 1
+        ongoing_project.total_progress += daily_progress
+        ongoing_project.daily_progress.append(daily_progress)
+        ongoing_project.quality_accumulation += quality_gain
+        ongoing_project.materials_used += project.materials_required / project.total_work_days
+        
+        # 意味圧文脈作成
+        carpentry_context = self._create_multi_day_meaning_context(
+            ongoing_project, success, daily_progress, current_day
+        )
+        
+        # 意味圧ベース学習適用
+        carpentry_inertia = meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+            carpenter_name, MeaningActivityType.SOCIAL_COORDINATION, carpentry_context
+        )
+        
+        # 完了チェック
+        is_completed = ongoing_project.is_complete()
+        
+        result = {
+            'success': success,
+            'daily_progress': daily_progress,
+            'total_progress': ongoing_project.get_completion_percentage(),
+            'quality_so_far': ongoing_project.quality_accumulation,
+            'project_name': project.name,
+            'days_remaining': project.total_work_days - ongoing_project.days_worked,
+            'is_completed': is_completed,
+            'carpentry_inertia': carpentry_inertia,
+            'materials_used_today': project.materials_required / project.total_work_days
+        }
+        
+        if is_completed:
+            self._complete_project(ongoing_project)
+            result['final_quality'] = ongoing_project.quality_accumulation / project.total_work_days
+            
+        return result
+    
+    def _complete_project(self, ongoing_project: OngoingProject):
+        """プロジェクト完了処理"""
+        project = ongoing_project.project
+        
+        # 完成品質計算
+        final_quality = ongoing_project.quality_accumulation / project.total_work_days
+        
+        # 評判更新（大型プロジェクト完了ボーナス）
+        carpenter_reputation = self.carpenter_reputations.get(ongoing_project.lead_carpenter)
+        if carpenter_reputation:
+            completion_bonus = project.total_work_days * 0.5  # 日数ボーナス
+            quality_bonus = final_quality * 2.0
+            carpenter_reputation.reputation_score += completion_bonus + quality_bonus
+            carpenter_reputation.success_count += 1
+            
+            # 大型プロジェクトの場合、専門化認知
+            if project.total_work_days >= 7:
+                carpenter_reputation.specialization_known = True
+        
+        # 村の建物品質更新
+        if project.construction_type == ConstructionType.INFRASTRUCTURE:
+            building_key = "集会所" if "作業場" in project.name else "倉庫"
+            self.village_buildings[building_key] = min(1.0, 
+                self.village_buildings[building_key] + final_quality * 0.3)
+        
+        # 完成プロジェクトリストに移動
+        self.completed_projects.append(ongoing_project)
+        self.ongoing_projects.remove(ongoing_project)
+        
+        print(f"🎉 【プロジェクト完了】")
+        print(f"   📋 {project.name} ({ongoing_project.days_worked}日間)")
+        print(f"   最終品質: {final_quality:.2f}")
+        print(f"   👷 責任者: {ongoing_project.lead_carpenter}")
+    
+    def _create_multi_day_meaning_context(self, ongoing_project: OngoingProject, 
+                                        success: bool, daily_progress: float, 
+                                        current_day: int) -> Dict[str, Any]:
+        """マルチデイプロジェクト用意味圧文脈作成"""
+        project = ongoing_project.project
+        
+        context = {
+            'success': success,
+            'effectiveness': daily_progress,
+            'difficulty': project.difficulty,
+            'innovation': project.innovation_potential > 0.3,
+            'collaboration': len(ongoing_project.helpers) > 0,
+            'emergency': project.construction_type == ConstructionType.EMERGENCY_REPAIR,
+            'village_wide_impact': project.village_benefit > 0.5,
+            'people_affected': 1 if project.village_benefit <= 0.5 else random.randint(5, 15),
+            'multi_day_project': True,
+            'project_scale': project.total_work_days,
+            'project_progress': ongoing_project.get_completion_percentage() / 100.0,
+            'team_work': len(ongoing_project.helpers) > 0,
+            'long_term_commitment': project.total_work_days >= 7,
+            'milestone_achieved': ongoing_project.days_worked in [3, 7, 14],  # 重要なマイルストーン
+            'nearing_completion': ongoing_project.days_worked >= project.total_work_days - 2,
+            'early_stage': ongoing_project.days_worked <= 2,
+        }
+        
+        return context
+    
+    def get_ongoing_projects_status(self) -> List[Dict[str, Any]]:
+        """進行中プロジェクトの状況取得"""
+        status_list = []
+        
+        for ongoing in self.ongoing_projects:
+            status = {
+                'project_name': ongoing.project.name,
+                'lead_carpenter': ongoing.lead_carpenter,
+                'helpers': ongoing.helpers,
+                'days_worked': ongoing.days_worked,
+                'total_days': ongoing.project.total_work_days,
+                'progress_percentage': ongoing.get_completion_percentage(),
+                'quality_so_far': ongoing.quality_accumulation,
+                'materials_used': ongoing.materials_used
+            }
+            status_list.append(status)
+            
+        return status_list
+    
     def display_carpentry_status(self):
         """大工システム状況表示"""
         
-        print(f"\n🔨 === 大工システム状況 ===")
+        print(f"\n=== 大工システム状況 ===")
         print(f"材料ストック: {self.material_storage:.1f}単位")
         print(f"建築依頼数: {len(self.construction_requests)}")
         
@@ -470,13 +690,13 @@ class MeaningPressureCarpentrySystem:
                 elif reputation.reputation_score > self.reputation_thresholds["known_carpenter"]:
                     level = "大工"
                 
-                print(f"  🔨 {name} ({level}): 評判{reputation.reputation_score:.1f}, 成功率{success_rate:.1%}, 品質{avg_quality:.2f}")
+                print(f"  {name} ({level}): 評判{reputation.reputation_score:.1f}, 成功率{success_rate:.1%}, 品質{avg_quality:.2f}")
 
 
 def demonstrate_meaning_pressure_carpentry_with_ssd():
     """意味圧ベース大工システムのデモンストレーション"""
     
-    print("🔨 === 意味圧ベース大工システム + SSD Core Engine デモ ===\n")
+    print("=== 意味圧ベース大工システム + SSD Core Engine デモ ===\n")
     
     # システム初期化（SSD Core Engine + 意味圧ベース）
     carpentry_system = MeaningPressureCarpentrySystem()
@@ -509,7 +729,7 @@ def demonstrate_meaning_pressure_carpentry_with_ssd():
         )
         
         carpentry_inertia = meaning_pressure_system.get_villager_skill_level("大工タカシ", MeaningActivityType.SOCIAL_COORDINATION)
-        print(f"  🔨 {result['project_name']}: {'成功' if result['success'] else '失敗'}")
+        print(f"  {result['project_name']}: {'成功' if result['success'] else '失敗'}")
         print(f"  📈 大工慣性: {carpentry_inertia:.3f}")
     
     print(f"\n【シナリオ2: 緊急・革新的プロジェクト（意味圧上昇テスト）】")

@@ -129,7 +129,7 @@ class RumorSystem:
             creation_time=len(self.rumor_history)
         )
         
-        # デバッグ出力（簡素化）
+        # デバッグ出力（簡素化） - 新しい噂の作成
         print(f"    >> {speaker}が{listener}に話す: 「{rumor.get_rumor_text()}」")
         
         self.active_rumors.append(rumor)

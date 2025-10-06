@@ -39,6 +39,14 @@ class CareEvent:
     timestamp: float            # 時刻
     emotional_impact: str       # 感情的影響の説明
 
+@dataclass
+class CareRequest:
+    """看病依頼"""
+    patient_name: str           # 患者名
+    caregiver_preference: Optional[str] = None  # 希望看病者
+    urgency_level: float = 0.5  # 緊急度 (0.0-1.0)
+    care_complexity: float = 0.5  # 看病複雑さ (0.0-1.0)
+
 class RelationshipCareSystem:
     """関係値による看病システム"""
     
@@ -140,12 +148,12 @@ class RelationshipCareSystem:
                 injured_npc["energy"] -= injured_npc["injury_severity"] * 0.5
                 injured_npc["happiness"] -= 0.3
                 
-                print(f"💔 {injured_name}が負傷しました (重傷度: {injured_npc['injury_severity']:.1f})")
+                print(f"{injured_name}が負傷しました (重傷度: {injured_npc['injury_severity']:.1f})")
     
     def simulate_daily_care(self):
         """1日の看病シミュレーション"""
         
-        print(f"\n🏥 第{self.day}日目 - 看病・支援の時間")
+        print(f"\n第{self.day}日目 - 看病・支援の時間")
         
         # 負傷者リスト
         injured_npcs = [name for name, npc in self.npcs.items() if npc["is_injured"]]
@@ -371,10 +379,10 @@ class RelationshipCareSystem:
         """看病結果の表示"""
         
         action_emojis = {
-            CareAction.VISIT_BEDSIDE: "🏥",
+            CareAction.VISIT_BEDSIDE: "[訪問]",
             CareAction.BRING_FOOD: "🍲",
             CareAction.BRING_MEDICINE: "🌿",
-            CareAction.EMOTIONAL_SUPPORT: "💕",
+            CareAction.EMOTIONAL_SUPPORT: "[情緒サポート]",
             CareAction.PHYSICAL_CARE: "🤲",
             CareAction.STAY_OVERNIGHT: "🌙",
             CareAction.PRAYER_HEALING: "🙏",
@@ -392,7 +400,7 @@ class RelationshipCareSystem:
         elif care_event.effectiveness > 0.4:
             print(f"         😊 効果的な看病でした")
         else:
-            print(f"         💝 心温まる優しさでした")
+            print(f"         心温まる優しさでした")
     
     def _process_injury_recovery(self):
         """負傷回復処理"""
@@ -437,7 +445,7 @@ def demonstrate_care_system():
     """関係値看病システムのデモンストレーション"""
     
     print("=" * 80)
-    print("🤝💊 関係値による看病システム デモ")
+    print("関係値による看病システム デモ")
     print("=" * 80)
     
     # システム初期化
@@ -465,7 +473,7 @@ def demonstrate_care_system():
     # 初期関係値設定
     care_system.initialize_relationships()
     
-    print(f"\n💕 初期関係値（抜粋）:")
+    print(f"\n初期関係値（抜粋）:")
     sample_relationships = []
     for name, npc in care_system.npcs.items():
         for friend, relationship in list(npc["relationships"].items())[:2]:
@@ -476,7 +484,7 @@ def demonstrate_care_system():
     
     # 7日間のシミュレーション
     print(f"\n" + "=" * 60)
-    print(f"🏥 7日間看病システムシミュレーション")
+    print(f"7日間看病システムシミュレーション")
     print(f"=" * 60)
     
     for day in range(1, 8):
@@ -521,7 +529,7 @@ def demonstrate_care_system():
             
             all_relationships.sort(key=lambda x: x[2], reverse=True)
             
-            print(f"   🤝 最も親しい関係（上位3組）:")
+            print(f"   最も親しい関係（上位3組）:")
             for i, (person1, person2, rel) in enumerate(all_relationships[:3], 1):
                 print(f"     {i}. {person1} ⟷ {person2}: {rel:.2f}")
     
@@ -542,7 +550,7 @@ def demonstrate_care_system():
     
     caregiver_ranking = sorted(caregiver_counts.items(), key=lambda x: x[1], reverse=True)
     
-    print(f"\n👩‍⚕️ 最も献身的な看病者（上位5名）:")
+    print(f"\n最も献身的な看病者（上位5名）:")
     for i, (name, count) in enumerate(caregiver_ranking[:5], 1):
         personality = care_system.npcs[name]["personality"]
         print(f"  {i}位. {name} ({personality}): {count}回")
@@ -570,7 +578,7 @@ def demonstrate_care_system():
         print(f"  {action_name}: {count}回")
     
     # 関係値変化分析
-    print(f"\n💕 関係値変化分析:")
+    print(f"\n関係値変化分析:")
     
     # 最も成長した関係
     relationship_growth = []

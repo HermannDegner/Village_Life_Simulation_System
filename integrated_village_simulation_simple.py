@@ -2,7 +2,7 @@
 🏘️ VLSS 統合システム (簡易版) - integrated_village_simulation_simple.py
 
 【👑 シンプル統合村シミュレーション】
-現在利用可能なシステムを使った統合シミュレーション
+現在利用可能なシ        print(f"統合村システム初期化 - {len(self.villagers)}人の村")テムを使っ        print("  SSD Core Engine統合完了")        print("\n統合村システム初期化完了！")合シミュレーション
 
 統合内容:
 - 🧠 意味圧ベース学習システム
@@ -105,7 +105,7 @@ class SimpleIntegratedVillage:
             print(f"  {villager.name} ({villager.personality}) - スキル平均: {sum(villager.skills.values())/len(villager.skills):.1f}")
         
         print("  🧠 意味圧ベース学習システム初期化完了")  
-        print("  🔨 意味圧ベース大工システム初期化完了")
+        print("  意味圧ベース大工システム初期化完了")
         print("  🏘️ SSD Core Engine統合完了")
         print("\\n🌟 統合村システム初期化完了！")
     
@@ -547,11 +547,11 @@ class SimpleIntegratedVillage:
         print(f"  村の幸福度: {self.village_happiness:.2f}")
         
         print(f"\\n🧠 意味圧ベーススキル平均:")
-        print(f"  🏹 狩猟慣性: {stats['hunting_inertia']:.3f}")
+        print(f"  狩猟慣性: {stats['hunting_inertia']:.3f}")
         print(f"  💝 看護慣性: {stats['caregiving_inertia']:.3f}")  
         print(f"  🍳 料理慣性: {stats['cooking_inertia']:.3f}")
         print(f"  🤝 調整慣性: {stats['social_coordination_inertia']:.3f}")
-        print(f"  🔨 熟練大工: {stats['skilled_carpenters']}名")
+        print(f"  熟練大工: {stats['skilled_carpenters']}名")
         print(f"  🏠 建物品質: {stats['building_quality']:.2f}")
         
         return stats
@@ -587,11 +587,11 @@ def demonstrate_simple_integrated_simulation():
             for event in significant_events[:3]:  # 上位3イベント表示
                 if event['type'] == VillageEvent.HUNTING_ACTIVITY:
                     result_text = "成功" if event['success'] else "失敗"
-                    print(f"  🏹 {event['hunter']}の狩猟: {result_text}")
+                    print(f"  {event['hunter']}の狩猟: {result_text}")
                 elif event['type'] == VillageEvent.COOKING_ACTIVITY:
                     print(f"  🍳 {event['cook']}が料理 (品質: {event['meal_quality']:.2f})")
                 elif event['type'] == VillageEvent.CONSTRUCTION_COMPLETED:
-                    print(f"  🔨 {event['carpenter']}が{event['project']}完成")
+                    print(f"  {event['carpenter']}が{event['project']}完成")
                 elif event['type'] == VillageEvent.CARE_ACTIVITY:
                     print(f"  💝 {event['caregiver']}が{event['patient']}を看護")
         else:

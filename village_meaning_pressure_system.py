@@ -17,6 +17,7 @@ class ActivityType(Enum):
     CAREGIVING = "caregiving" 
     COOKING = "cooking"
     SOCIAL_COORDINATION = "social_coordination"
+    CARPENTRY = "carpentry"
 
 class MeaningLevel(Enum):
     """経験の意味レベル"""
@@ -43,7 +44,8 @@ class VillageMeaningPressureSystem:
             ActivityType.HUNTING: 0.4,      # 中程度（体力消耗）
             ActivityType.CAREGIVING: 0.2,   # 低め（社会的活動）
             ActivityType.COOKING: 0.3,      # 中程度（技術と創造性）
-            ActivityType.SOCIAL_COORDINATION: 0.5  # 高め（複雑な調整）
+            ActivityType.SOCIAL_COORDINATION: 0.5,  # 高め（複雑な調整）
+            ActivityType.CARPENTRY: 0.6     # 最高（技術・体力・創造性）
         }
         
         # 活動別の基本整合係数
@@ -51,7 +53,8 @@ class VillageMeaningPressureSystem:
             ActivityType.HUNTING: 0.25,
             ActivityType.CAREGIVING: 0.30,
             ActivityType.COOKING: 0.35,
-            ActivityType.SOCIAL_COORDINATION: 0.20
+            ActivityType.SOCIAL_COORDINATION: 0.20,
+            ActivityType.CARPENTRY: 0.40    # 高め（技術習得による成長）
         }
     
     def calculate_meaning_pressure(self, person_id: str, activity: ActivityType, 
@@ -133,6 +136,21 @@ class VillageMeaningPressureSystem:
                 return MeaningLevel.ROUTINE
             else:
                 return MeaningLevel.TRIVIAL
+                
+        elif activity == ActivityType.CARPENTRY:
+            complex_project = context.get('complex_project', False)
+            new_technique = context.get('new_technique', False) 
+            emergency_construction = context.get('emergency_construction', False)
+            project_quality = context.get('project_quality', 0.5)
+            
+            if (complex_project or emergency_construction) and success and project_quality > 0.8:
+                return MeaningLevel.PROFOUND
+            elif new_technique and success:
+                return MeaningLevel.MEANINGFUL
+            elif success and project_quality > 0.6:
+                return MeaningLevel.ROUTINE
+            else:
+                return MeaningLevel.TRIVIAL
         
         # デフォルト評価
         if innovation and success:
@@ -160,6 +178,9 @@ class VillageMeaningPressureSystem:
         elif activity == ActivityType.COOKING:
             # 料理は創造性で繰り返し回避可能
             decay_rate = 0.04
+        elif activity == ActivityType.CARPENTRY:
+            # 大工は技術習得で長期成長可能
+            decay_rate = 0.02
         else:
             decay_rate = 0.08
         
@@ -197,6 +218,14 @@ class VillageMeaningPressureSystem:
                 complexity += 0.4
             if context.get('large_group', False):
                 complexity += 0.3
+                
+        elif activity == ActivityType.CARPENTRY:
+            if context.get('limited_materials', False):
+                complexity += 0.5
+            if context.get('structural_requirements', False):
+                complexity += 0.6
+            if context.get('team_coordination', False):
+                complexity += 0.4
         
         return min(2.5, complexity)  # 最大2.5倍
     
@@ -272,7 +301,8 @@ class VillageMeaningPressureSystem:
             ActivityType.HUNTING: 0.12,
             ActivityType.CAREGIVING: 0.15,
             ActivityType.COOKING: 0.18,
-            ActivityType.SOCIAL_COORDINATION: 0.10
+            ActivityType.SOCIAL_COORDINATION: 0.10,
+            ActivityType.CARPENTRY: 0.14
         }
         
         learning_rate = base_rates[activity]

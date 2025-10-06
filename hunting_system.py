@@ -612,7 +612,7 @@ def demonstrate_hunting_system():
     """狩りシステムのデモンストレーション"""
     
     print("=" * 80)
-    print("🏹 村ライフSSD - 狩りシステム デモ")
+    print("村ライフSSD - 狩りシステム デモ")
     print("=" * 80)
     
     # システム初期化
@@ -646,7 +646,7 @@ def demonstrate_hunting_system():
               f"力:{status['strength']:.1f} 勇気:{status['courage']:.1f}")
     
     # 7日間の狩猟シミュレーション
-    print(f"\n🏹 7日間狩猟シミュレーション:")
+    print(f"\n7日間狩猟シミュレーション:")
     
     for day in range(1, 8):
         print(f"\n--- {day}日目 ---")
@@ -657,11 +657,11 @@ def demonstrate_hunting_system():
         # 利用可能な獲物表示
         available_prey = hunting_system.get_available_prey()
         if available_prey:
-            print(f"🦌 出現している獲物:")
+            print(f"出現している獲物:")
             for prey_info in available_prey[:3]:  # 上位3つを表示
-                size_emoji = {"small": "🐰", "medium": "🦌", "large": "🐻", "legendary": "🐉"}
-                emoji = size_emoji.get(prey_info["size"], "🦌")
-                danger = "⚠️" * min(3, int(prey_info["danger_level"] * 3 + 1))
+                size_emoji = {"small": "[小]", "medium": "[中]", "large": "[大]", "legendary": "[伝説]"}
+                emoji = size_emoji.get(prey_info["size"], "[中]")
+                danger = "[危険]" * min(3, int(prey_info["danger_level"] * 3 + 1))
                 
                 print(f"  {emoji} {prey_info['name']} {prey_info['rarity_indicator']} {danger}")
                 print(f"     肉量: {prey_info['estimated_meat']:.1f}, 栄養価: {prey_info['nutrition_value']:.1f}")
@@ -680,7 +680,7 @@ def demonstrate_hunting_system():
             num_hunters = random.randint(1, 4)
             selected_hunters = random.sample(list(npcs.keys()), num_hunters)
             
-            print(f"\n🎯 狩猟{hunt_num + 1}: {target_prey.name}")
+            print(f"\n狩猟{hunt_num + 1}: {target_prey.name}")
             print(f"   ハンター: {', '.join(selected_hunters)}")
             
             # 各ハンターのスタイル予測表示
@@ -716,7 +716,7 @@ def demonstrate_hunting_system():
                 )
                 
                 if distribution["distributed"]:
-                    print(f"   🍖 肉の分配:")
+                    print(f"   肉の分配:")
                     for hunter, amount in distribution["hunter_shares"].items():
                         print(f"     {hunter}: {amount:.1f}")
                     
@@ -760,7 +760,7 @@ def demonstrate_hunting_system():
     successful_hunts = len([h for h in hunting_system.hunting_history 
                           if h.result in [HuntResult.SUCCESS, HuntResult.CRITICAL_SUCCESS, HuntResult.PARTIAL_SUCCESS]])
     
-    print(f"\n🎯 全体統計:")
+    print(f"\n全体統計:")
     print(f"  総狩猟回数: {total_hunts}回")
     print(f"  成功率: {successful_hunts/max(1, total_hunts)*100:.1f}%")
     
@@ -779,17 +779,17 @@ def demonstrate_hunting_system():
             prey_stats[prey_name]["meat"] += hunt.meat_obtained
             total_meat += hunt.meat_obtained
     
-    print(f"\n🦌 獲物別成績:")
+    print(f"\n獲物別成績:")
     for prey_name, stats in sorted(prey_stats.items(), key=lambda x: x[1]["meat"], reverse=True):
         if stats["attempts"] > 0:
             success_rate = stats["successes"] / stats["attempts"] * 100
             print(f"  {prey_name}: {stats['successes']}/{stats['attempts']} "
                   f"({success_rate:.0f}%), 肉量: {stats['meat']:.1f}")
     
-    print(f"\n🍖 総獲得肉量: {total_meat:.1f}")
+    print(f"\n総獲得肉量: {total_meat:.1f}")
     
     # 最終ハンターランキング
-    print(f"\n🏆 最終ハンターランキング:")
+    print(f"\n最終ハンターランキング:")
     final_ranking = []
     
     for name in npcs.keys():

@@ -13,10 +13,22 @@ from enum import Enum
 from village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
 
 # 既存システムのインポート
-from integrated_village_simulation import IntegratedVillageSystem, VillageEvent, VillageStatus
+# from integrated_village_simulation import IntegratedVillageSystem, VillageEvent, VillageStatus  # 循環インポート回避のためコメントアウト
 # ActivityTypeは現在はvillage_meaning_pressure_systemからインポート
 from village_meaning_pressure_system import ActivityType
 from rumor_system import RumorSystem, RumorType
+
+class VillageEvent(Enum):
+    """村の出来事"""
+    HUNTING_SUCCESS = "hunting_success"
+    HUNTING_FAILURE = "hunting_failure"  
+    CARE_PROVIDED = "care_provided"
+    MEAL_PREPARED = "meal_prepared"
+    CONSTRUCTION_COMPLETED = "construction_completed"
+    EMERGENCY_SITUATION = "emergency_situation"
+    INNOVATION_ACHIEVED = "innovation_achieved"
+    FEAST_CELEBRATION = "feast_celebration"
+    NATURAL_CAREGIVER_EMERGED = "natural_caregiver_emerged"
 
 @dataclass
 class CookingReputation:
@@ -61,7 +73,7 @@ class Dish:
 class EnhancedCookingSystem:
     """拡張料理システム"""
     
-    def __init__(self, base_village: IntegratedVillageSystem):
+    def __init__(self, base_village):  # 循環インポート回避のため型ヒントを削除
         self.base_village = base_village
         self.cook_reputations: Dict[str, CookingReputation] = {}
         self.cooking_requests: List[CookingRequest] = []
@@ -76,8 +88,8 @@ class EnhancedCookingSystem:
         else:
             # フォールバック：独自の噂システム
             self.rumor_system = RumorSystem()
-            villager_names = list(base_village.base_system.npcs.keys())
-            self.rumor_system.initialize_reputations(villager_names, base_village.base_system.npcs)
+            villager_names = [v.name for v in base_village.villagers] if hasattr(base_village, 'villagers') else []
+            self.rumor_system.initialize_reputations(villager_names, {})
         
         # 料理データベース
         self.dish_database = {
@@ -116,10 +128,17 @@ class EnhancedCookingSystem:
             "recovery_meal": 0.8,      # 回復食依頼率
         }
     
-    def initialize_cooking_reputations(self):
+    def initialize_cooking_reputations(self, villager_names: List[str] = None):
         """料理評判初期化"""
         
-        for name in self.base_village.base_system.npcs.keys():
+        if villager_names is None:
+            # base_village から取得を試みる
+            if hasattr(self.base_village, 'villagers'):
+                villager_names = [v.name for v in self.base_village.villagers]
+            else:
+                villager_names = []
+        
+        for name in villager_names:
             if name not in self.cook_reputations:
                 self.cook_reputations[name] = CookingReputation(cook_name=name)
     
@@ -189,7 +208,7 @@ class EnhancedCookingSystem:
         assignments = []
         
         for request in requests:
-            print(f"    🍳 料理依頼: {request.requester_name}が{request.occasion}料理を依頼")
+            print(f"    料理依頼: {request.requester_name}が{request.occasion}料理を依頼")
             
             # 指名料理人がいる場合
             if request.preferred_cook:
@@ -200,7 +219,7 @@ class EnhancedCookingSystem:
                     cook["daily_energy_used"] < 0.8):
                     
                     assignments.append((request.preferred_cook, request))
-                    print(f"      ✅ {request.preferred_cook}が指名で料理を担当")
+                    print(f"      {request.preferred_cook}が指名で料理を担当")
                     
                     # 依頼回数記録
                     if request.preferred_cook in self.cook_reputations:
@@ -214,9 +233,9 @@ class EnhancedCookingSystem:
             if available_cooks:
                 selected_cook = self._select_cook_by_reputation(available_cooks, request)
                 assignments.append((selected_cook, request))
-                print(f"      ✅ {selected_cook}が料理を担当")
+                print(f"      {selected_cook}が料理を担当")
             else:
-                print(f"      ❌ 利用可能な料理人がいません")
+                print(f"      利用可能な料理人がいません")
         
         return assignments
     
@@ -243,10 +262,10 @@ class EnhancedCookingSystem:
         # 美味しさ計算
         if success:
             taste_score = min(1.0, dish.base_taste * cooking_skill * (1.0 + style_bonus * 0.5))
-            result_text = "✅成功"
+            result_text = "成功"
         else:
             taste_score = dish.base_taste * 0.4 * cooking_skill
-            result_text = "❌失敗"
+            result_text = "失敗"
         
         # 肉消費
         meat_used = dish.meat_required * request.group_size
@@ -255,9 +274,9 @@ class EnhancedCookingSystem:
         else:
             # 肉不足の場合、品質低下
             taste_score *= 0.6
-            print(f"        ⚠️ 材料不足により品質低下")
+            print(f"        材料不足により品質低下")
         
-        print(f"      🍽️ {cook_name}が{dish.name}を調理 (美味しさ:{taste_score:.2f}) {result_text}")
+        print(f"      {cook_name}が{dish.name}を調理 (美味しさ:{taste_score:.2f}) {result_text}")
         
         # 効果適用
         self._apply_cooking_effects(cook_name, request, dish, taste_score, success)
@@ -496,7 +515,7 @@ class EnhancedCookingSystem:
             
             reputation.specialization_known = True
             self.base_village.base_system.npcs[cook_name]["natural_cook"] = True  # フラグ追加
-            print(f"    🍳 {cook_name}が料理人として村で知られるようになりました！")
+            print(f"    {cook_name}が料理人として村で知られるようになりました！")
     
     def _generate_rumor_from_cooking(self, cook_name: str, eater_name: str, success: bool, taste_score: float, dish):
         """料理結果から噂を生成（食べた人が体験を語る）"""
@@ -633,7 +652,7 @@ class EnhancedCookingSystem:
     def display_cooking_reputation_status(self):
         """料理評判状況表示"""
         
-        print(f"\n  🍳 料理評判状況:")
+        print(f"\n  料理評判状況:")
         
         # 評判でソート
         reputation_list = []
@@ -658,7 +677,7 @@ class EnhancedCookingSystem:
                 status_icons.append("🏆")
             
             if reputation.success_count >= self.reputation_thresholds["master_chef"]:
-                status_icons.append("👑")
+                status_icons.append("[王冠]")
             
             status_str = "".join(status_icons) if status_icons else ""
             
@@ -674,18 +693,21 @@ class EnhancedCookingSystem:
             if reputation.signature_dishes:
                 print(f"      得意料理: {', '.join(reputation.signature_dishes)}")
 
-class EnhancedVillageWithCooking(IntegratedVillageSystem):
+class EnhancedVillageWithCooking:  # 循環インポート回避のため継承を一時的に削除
     """料理システム統合村"""
     
     def __init__(self):
-        super().__init__()
+        # 循環インポート回避のため遅延インポート
+        from integrated_village_simulation import IntegratedVillageSimulation
+        IntegratedVillageSimulation.__init__(self)
         self.cooking_system = None  # 後で初期化
     
     def initialize_integrated_village(self, village_size: int = 10):
         """料理システム統合初期化"""
         
-        # ベースシステム初期化
-        super().initialize_integrated_village(village_size)
+        # ベースシステム初期化 (遅延インポート)
+        from integrated_village_simulation import IntegratedVillageSimulation
+        IntegratedVillageSimulation.initialize_integrated_village(self, village_size)
         
         # 料理システム初期化
         self.cooking_system = EnhancedCookingSystem(self)
@@ -704,7 +726,7 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
         cooking_requests = self.cooking_system.generate_cooking_requests()
         
         if cooking_requests:
-            print(f"    📋 料理依頼: {len(cooking_requests)}件")
+            print(f"    料理依頼: {len(cooking_requests)}件")
             assignments = self.cooking_system.process_cooking_requests(cooking_requests)
             
             # 料理実行
@@ -764,14 +786,14 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
                 reputation = self.cooking_system.cook_reputations[name]
                 if reputation.specialization_known:
                     npc["natural_cook"] = True
-                    print(f"    🍳 {name}が自然な料理人として認められました！")
+                    print(f"    {name}が自然な料理人として認められました！")
                     self.village_events.append((self.village_status.day, VillageEvent.NATURAL_CAREGIVER_EMERGED, f"料理人:{name}"))  # イベント流用
     
     def _display_periodic_report(self, day: int):
         """定期レポート表示（料理システム統合版）"""
         
         print(f"\n" + "=" * 60)
-        print(f"📋 第{day}日目 - 定期レポート")
+        print(f"第{day}日目 - 定期レポート")
         print(f"=" * 60)
         
         # 村ステータス
@@ -819,7 +841,7 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
             
             if npc["natural_hunter"]:
                 hunt_stats = self.base_system.hunting_system.get_npc_hunting_status(name)
-                specializations.append(f"🏹ハンター(Lv.{hunt_stats['level']:.1f})")
+                specializations.append(f"ハンター(Lv.{hunt_stats['level']:.1f})")
             
             if npc["natural_caregiver"]:
                 care_exp = self.base_system.specialization_levels[name][ActivityType.CAREGIVING]
@@ -834,9 +856,9 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
                 if name in self.cooking_system.cook_reputations:
                     reputation = self.cooking_system.cook_reputations[name]
                     signature = f", 得意:{', '.join(reputation.signature_dishes[:2])}" if reputation.signature_dishes else ""
-                    specializations.append(f"🍳料理人(経験値{cooking_exp:.0f}, 評判{reputation.reputation_score:.2f}{signature})")
+                    specializations.append(f"料理人(経験値{cooking_exp:.0f}, 評判{reputation.reputation_score:.2f}{signature})")
                 else:
-                    specializations.append(f"🍳料理人(経験値{cooking_exp:.0f})")
+                    specializations.append(f"料理人(経験値{cooking_exp:.0f})")
             
             if npc["social_coordinator"]:
                 social_exp = self.base_system.specialization_levels[name][ActivityType.SOCIALIZING]
@@ -854,7 +876,7 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
                 if max_exp > 10:
                     activity_names = {
                         ActivityType.GATHERING: "🌿採取",
-                        ActivityType.CRAFTING: "🔨工作",
+                        ActivityType.CRAFTING: "工作",
                         ActivityType.RESTING: "😴休息"
                     }
                     activity_name = activity_names.get(max_activity, str(max_activity.value))
@@ -868,7 +890,7 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
             print(f"  {name} ({npc['personality']}): {status_text} [{health_status}, 幸福度{npc['happiness']:.2f}]")
         
         # 料理評判最終状況
-        print(f"\n🍳 料理評判最終状況:")
+        print(f"\n料理評判最終状況:")
         self.cooking_system.display_cooking_reputation_status()
         
         # 統計サマリー
@@ -878,7 +900,7 @@ class EnhancedVillageWithCooking(IntegratedVillageSystem):
                            natural_cooks + 
                            self.village_status.social_coordinators)
         
-        print(f"\n📈 統計サマリー:")
+        print(f"\n統計サマリー:")
         print(f"  シミュレーション日数: {self.village_status.day}日")
         print(f"  総イベント数: {len(self.village_events)}件")
         print(f"  最終食料貯蔵量: {self.village_status.total_meat_stored:.1f}単位")

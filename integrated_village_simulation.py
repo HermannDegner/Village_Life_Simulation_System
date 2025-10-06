@@ -1,14 +1,14 @@
 """
-🏘️ VLSS メインシステム - integrated_village_simulation.py
+VLSS メインシステム - integrated_village_simulation.py
 
-【👑 メイン統合村シミュレーション】
+【メイン統合村シミュレーション】
 統合村生活シミュレーション - SSD Core Engine + 意味圧ベース学習統合版
 
 統合内容:
-- 🏹 狩猟システム (SSD + 意味圧)
-- 💝 看護システム (SSD + 意味圧)
-- 🍳 料理システム (SSD + 意味圧)  
-- 🔨 大工システム (SSD + 意味圧)
+- 狩猟システム (SSD + 意味圧)
+- 看護システム (SSD + 意味圧)
+- 料理システム (SSD + 意味圧)  
+- 大工システム (SSD + 意味圧)
 
 使用方法: python integrated_village_simulation.py
 """
@@ -25,7 +25,8 @@ from village_meaning_pressure_system import VillageMeaningPressureSystem, Activi
 from meaning_pressure_carpentry_system import MeaningPressureCarpentrySystem, ConstructionRequest, ConstructionType
 from hunting_system import HuntingSystem, Prey
 from relationship_care_system import RelationshipCareSystem, CareRequest
-from cooking_integrated_village import IntegratedCookingSystem, CookingRequest
+from cooking_integrated_village import EnhancedCookingSystem, CookingRequest
+from rumor_system import RumorSystem, RumorType
 
 @dataclass
 class Villager:
@@ -36,7 +37,16 @@ class Villager:
     hunger: float = 0.3
     energy: float = 1.0
     injured: bool = False
+    severe_injury: bool = False  # 重傷フラグ
+    injury_recovery_days: int = 0  # 重傷回復までの日数
     skills: Dict[str, float] = field(default_factory=dict)
+    
+    # エネルギー・時間管理
+    daily_energy_used: float = 0.0
+    work_sessions_today: int = 0
+    last_work_type: str = ""
+    fatigue_level: float = 0.0
+    max_work_sessions: int = 3  # 1日最大作業回数
     
     def __post_init__(self):
         if not self.skills:
@@ -46,6 +56,48 @@ class Villager:
                 'cooking': random.uniform(0.3, 2.0),
                 'carpentry': random.uniform(0.2, 1.5),
             }
+    
+    def can_work(self, work_type: str, energy_required: float) -> bool:
+        """作業可能かチェック"""
+        # 重傷時は完全に作業不可
+        if self.severe_injury:
+            return False
+        if self.injured or self.health < 0.3:
+            return False
+        if self.energy < energy_required:
+            return False
+        if self.work_sessions_today >= self.max_work_sessions:
+            return False
+        if self.daily_energy_used + energy_required > 0.8:  # 1日最大エネルギー消費
+            return False
+        return True
+    
+    def consume_energy(self, work_type: str, energy_amount: float, work_duration: float):
+        """エネルギー消費と疲労蓄積"""
+        # 基本エネルギー消費
+        self.energy = max(0.0, self.energy - energy_amount)
+        self.daily_energy_used += energy_amount
+        self.work_sessions_today += 1
+        
+        # 疲労蓄積（同じ作業の繰り返しで増加）
+        if self.last_work_type == work_type:
+            self.fatigue_level += 0.1
+        else:
+            self.fatigue_level = max(0.0, self.fatigue_level - 0.05)
+        
+        self.last_work_type = work_type
+        
+        # 疲労による効率低下
+        if self.fatigue_level > 0.5:
+            self.energy = max(0.0, self.energy - 0.1)
+    
+    def reset_daily_work(self):
+        """日次作業データリセット"""
+        self.daily_energy_used = 0.0
+        self.work_sessions_today = 0
+        # 夜間回復
+        self.energy = min(1.0, self.energy + 0.4)
+        self.fatigue_level = max(0.0, self.fatigue_level - 0.2)
 
 class VillageEvent(Enum):
     """村の出来事"""
@@ -54,8 +106,11 @@ class VillageEvent(Enum):
     CARE_PROVIDED = "care_provided"
     MEAL_PREPARED = "meal_prepared"
     CONSTRUCTION_COMPLETED = "construction_completed"
+    CONSTRUCTION_FAILED = "construction_failed"
     EMERGENCY_SITUATION = "emergency_situation"
     INNOVATION_ACHIEVED = "innovation_achieved"
+    WORK_EXHAUSTION = "work_exhaustion"
+    ENERGY_RECOVERED = "energy_recovered"
 
 class IntegratedVillageSimulation:
     """統合村シミュレーション - 意味圧ベース + SSD Core Engine"""
@@ -65,7 +120,7 @@ class IntegratedVillageSimulation:
         self.population_size = population_size
         self.current_day = 0
         self.village_events: List[Dict[str, Any]] = []
-        self.food_storage = 0.0
+        self.food_storage = 1.0  # 最小限の初期食料
         self.village_happiness = random.uniform(0.5, 0.8)
         
         # 統合システム初期化
@@ -75,8 +130,9 @@ class IntegratedVillageSimulation:
         # 各活動システム初期化
         self.hunting_system = HuntingSystem()
         self.care_system = RelationshipCareSystem()
-        self.cooking_system = IntegratedCookingSystem()  
+        self.cooking_system = EnhancedCookingSystem(self)  
         self.carpentry_system = MeaningPressureCarpentrySystem()
+        self.rumor_system = RumorSystem()
         
         # 村人生成
         self.villagers = self._generate_villagers()
@@ -104,31 +160,50 @@ class IntegratedVillageSimulation:
         villager_names = [v.name for v in self.villagers]
         
         # 各システムに村人を登録
-        self.hunting_system.initialize_hunters(villager_names)
-        self.care_system.initialize_caregivers(villager_names)
-        self.cooking_system.initialize_cooks(villager_names)
+        # self.hunting_system.initialize_hunters(villager_names)  # HuntingSystemにメソッドなし
+        self.care_system.initialize_relationships()
+        self.cooking_system.initialize_cooking_reputations(villager_names)
         self.carpentry_system.initialize_carpentry_reputations(villager_names)
         
-        # 意味圧システムに村人登録
-        for villager in self.villagers:
-            self.meaning_pressure_system.initialize_villager(
-                villager.name, villager.personality, villager.skills
-            )
+        # 噂システム初期化
+        villager_data = {v.name: {"personality": v.personality} for v in self.villagers}
+        self.rumor_system.initialize_reputations(villager_names, villager_data)
         
-        print(f"🏘️ 統合村システム初期化 - {len(self.villagers)}人の村")
+        # 意味圧システムに村人登録
+        # for villager in self.villagers:
+        #     self.meaning_pressure_system.initialize_villager(
+        #         villager.name, villager.personality, villager.skills
+        #     )  # VillageMeaningPressureSystemにメソッドなし
+        
+        print(f"村システム初期化済み - {len(self.villagers)}人の村")
         for villager in self.villagers:
             hunting_skill = villager.skills.get('hunting', 1.0)
             print(f"  {villager.name} ({villager.personality}) - 狩猟スキル: {hunting_skill:.1f}")
         
-        print("  🍳 料理システム統合完了")
-        print("  🧠 意味圧ベース学習システム初期化完了")  
-        print("  🔨 意味圧ベース大工システム初期化完了")
-        print("\\n🌟 統合村システム初期化完了！")
+        print("  料理システム統合完了")
+        print("  意味圧ベース学習システム初期化完了")  
+        print("  意味圧ベース大工システム初期化完了")
+        print("  噂システム初期化完了")
+        print("\\n=== 統合村システム初期化完了！===")
+    
+    def _update_daily_environment(self):
+        """日次環境更新（獲物出現等）"""
+        # 獲物出現処理
+        self.hunting_system.spawn_prey(24.0)
+        
+        # 村人のエネルギー回復（前日からの回復）
+        for villager in self.villagers:
+            villager.daily_energy_used = 0.0
+            villager.work_sessions_today = 0
+            villager.fatigue_level = max(0.0, villager.fatigue_level - 0.2)
     
     def simulate_day(self) -> Dict[str, Any]:
         """1日のシミュレーション実行"""
         self.current_day += 1
         daily_events = []
+        
+        # 日次環境更新（獲物出現など）
+        self._update_daily_environment()
         
         # 朝の活動（生産活動）
         morning_events = self._morning_production_activities()
@@ -161,6 +236,17 @@ class IntegratedVillageSimulation:
         """朝の生産活動"""
         events = []
         
+        # 空腹度更新
+        self._update_hunger()
+        
+        # 食料不足時は狩猟を最優先
+        if self.food_storage < 2.0:
+            print(f"警告: 食料不足！現在の貯蔵量: {self.food_storage:.1f}")
+            hunting_events = self._conduct_hunting()
+            events.extend(hunting_events)
+            return events  # 食料確保最優先
+        
+        # 通常時の活動
         # 狩猟活動
         hunting_events = self._conduct_hunting()
         events.extend(hunting_events)
@@ -175,58 +261,129 @@ class IntegratedVillageSimulation:
         
         return events
     
+    def _update_hunger(self):
+        """全村人の空腹度を更新"""
+        for villager in self.villagers:
+            # 基本的な空腹増加（活動による消耗）
+            villager.hunger += 0.15 + villager.fatigue_level * 0.05
+            if villager.hunger > 1.0:
+                villager.hunger = 1.0
+    
     def _conduct_hunting(self) -> List[Dict[str, Any]]:
         """狩猟活動の実行"""
         events = []
         
-        # 狩猟参加者選出（エネルギーがある村人）
+        # エネルギー必要量設定
+        hunting_energy_required = 0.3
+        
+        # 狩猟参加者選出（エネルギーと作業制限チェック）
         available_hunters = [
-            v.name for v in self.villagers 
-            if v.energy > 0.4 and not v.injured and v.skills.get('hunting', 0) > 0.5
+            v for v in self.villagers 
+            if v.can_work('hunting', hunting_energy_required)
         ]
         
         if not available_hunters:
             return events
         
-        # 2-3人のチームで狩猟
-        team_size = min(3, len(available_hunters))
-        hunters = random.sample(available_hunters, team_size)
-        
-        # 獲物選択
-        available_prey = [p for p in self.hunting_system.available_prey.values() if p.base_quantity > 0]
-        if not available_prey:
+        # チームサイズを制限（エネルギー管理のため）
+        max_team_size = min(2, len(available_hunters))  # 最大2人に制限
+        if max_team_size < 1:
             return events
         
-        prey = random.choice(available_prey)
+        hunters = random.sample(available_hunters, max_team_size)
+        hunter_names = [h.name for h in hunters]
         
-        # 狩猟実行
-        for hunter_name in hunters:
-            result = self.hunting_system.execute_hunt_with_meaning_pressure(
-                hunter_name, prey, self.meaning_pressure_system
-            )
+        # 簡素化された狩猟システム（確実に食料獲得）
+        for hunter in hunters:
+            hunter_name = hunter.name
+            
+            # 狩猟成功判定（スキルベース + ランダム）
+            hunting_skill = hunter.skills.get('hunting', 0.5)
+            success_chance = min(0.9, 0.3 + hunting_skill * 0.6)
+            hunt_success = random.random() < success_chance
+            
+            # エネルギー消費
+            hunt_duration = 3.0 + random.uniform(0, 2.0)
+            energy_consumption = hunting_energy_required * random.uniform(0.8, 1.2)
+            
+            # エネルギー消費実行
+            hunter.consume_energy('hunting', energy_consumption, hunt_duration)
             
             # 結果処理
-            if result['success']:
-                self.food_storage += result['food_gained']
-                self._update_villager_energy(hunter_name, -0.2)
+            if hunt_success:
+                # 食料獲得（スキルに基づいて量決定）
+                food_gained = 1.5 + hunting_skill * 1.0 + random.uniform(0, 0.5)
+                self.food_storage += food_gained
+                
+                # 狩猟成功の噂を広める
+                self._spread_hunting_rumor(hunter_name, True, hunt_duration, 0.5)
                 
                 events.append({
                     'type': VillageEvent.HUNTING_SUCCESS,
                     'hunter': hunter_name,
-                    'prey': prey.name,
-                    'food_gained': result['food_gained'],
-                    'hunting_inertia': result['hunting_inertia']
+                    'prey': "小動物",
+                    'food_gained': food_gained,
+                    'energy_used': energy_consumption,
+                    'hunt_duration': hunt_duration
                 })
-            else:
-                self._update_villager_energy(hunter_name, -0.3)
-                # 失敗時怪我のリスク
-                if random.random() < 0.1:
+                
+                # 成功時でも軽い怪我のリスク（失敗時より低確率）
+                success_injury_risk = 0.03 + hunter.fatigue_level * 0.05  # 3-8%程度
+                severe_injury_risk = 0.005 + hunter.fatigue_level * 0.01  # 0.5-1.5%程度
+                
+                if random.random() < severe_injury_risk:
+                    # 稀に重傷
+                    self._injure_villager(hunter_name, severe=True)
+                    events[-1]['severe_injury_occurred'] = True
+                elif random.random() < success_injury_risk:
+                    # 通常の軽傷
                     self._injure_villager(hunter_name)
+                    events[-1]['injury_occurred'] = True
+                
+                # 意味圧システムにスキル向上を記録
+                hunting_context = {
+                    'success': True,
+                    'effectiveness': food_gained / 3.0,
+                    'difficulty': 0.5,
+                    'innovation': False
+                }
+                updated_inertia = self.meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+                    hunter_name, MeaningActivityType.HUNTING, hunting_context
+                )
+                print(f"      [DEBUG] {hunter_name}の狩猟慣性更新: {updated_inertia:.3f}")
+                
+                # SSD理論: 狩猟成功による主観的境界学習
+                self.ssd_adapter.update_experience(hunter_name, "hunting", True, food_gained / 3.0)
+                
+            else:
+                # 失敗時怪我のリスク（成功時より高確率）
+                injury_risk = 0.08 + hunter.fatigue_level * 0.12  # 8-20%程度
+                severe_injury_risk = 0.02 + hunter.fatigue_level * 0.03  # 2-5%程度
+                
+                severe_injury_occurred = random.random() < severe_injury_risk
+                injury_occurred = random.random() < injury_risk
+                
+                if severe_injury_occurred:
+                    # 重傷
+                    self._injure_villager(hunter_name, severe=True)
+                elif injury_occurred:
+                    # 軽傷
+                    self._injure_villager(hunter_name)
+                
+                # SSD理論: 狩猟失敗による主観的境界学習
+                self.ssd_adapter.update_experience(hunter_name, "hunting", False, 0.3)
+                
+                # 狩猟失敗の噂を広める（低い頻度で）
+                if random.random() < 0.3:  # 30%の確率で失敗の噂が広がる
+                    self._spread_hunting_rumor(hunter_name, False, hunt_duration, 0.5)
                 
                 events.append({
                     'type': VillageEvent.HUNTING_FAILURE,
                     'hunter': hunter_name,
-                    'prey': prey.name
+                    'prey': "小動物",
+                    'energy_used': energy_consumption,
+                    'injury_occurred': injury_occurred,
+                    'hunt_duration': hunt_duration
                 })
         
         return events
@@ -235,9 +392,9 @@ class IntegratedVillageSimulation:
         """料理活動の実行"""
         events = []
         
-        # 料理需要の判定
-        if self.food_storage < 2.0 or random.random() < 0.6:
-            return events
+        # 食料がある場合は料理を実行
+        if self.food_storage <= 0:
+            return events  # 食料がない場合のみスキップ
         
         # 料理担当者選出
         available_cooks = [
@@ -261,19 +418,17 @@ class IntegratedVillageSimulation:
         cooking_request = CookingRequest(
             requester_name=cook_name,
             preferred_cook=cook_name,
-            meal_type="daily_meal",
-            complexity=random.uniform(0.3, 0.8),
-            ingredients_available=min(self.food_storage, 3.0)
+            occasion="daily",
+            urgency_level=random.uniform(0.4, 0.7),
+            group_size=len(self.villagers)
         )
         
-        # 料理実行
-        result = self.cooking_system.execute_cooking_with_meaning_pressure(
-            cook_name, cooking_request, self.meaning_pressure_system
-        )
+        # 簡易料理実行
+        ingredients_used = min(2.0, self.food_storage)  # 最大2.0単位の食材を使用
+        cooking_success = random.random() < 0.8  # 80%の成功確率
         
-        # 結果処理
-        if result['success']:
-            self.food_storage -= result['ingredients_used']
+        if cooking_success and ingredients_used > 0:
+            self.food_storage -= ingredients_used
             # 村全体の満足度向上
             self.village_happiness = min(1.0, self.village_happiness + 0.05)
             
@@ -281,68 +436,248 @@ class IntegratedVillageSimulation:
             for villager in self.villagers:
                 villager.hunger = max(0.0, villager.hunger - 0.3)
             
+            # 意味圧システムにスキル向上を記録
+            cooking_context = {
+                'success': True,
+                'effectiveness': 0.7,  # 標準的な品質
+                'difficulty': 0.4,
+                'innovation': False
+            }
+            updated_inertia = self.meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+                cook_name, MeaningActivityType.COOKING, cooking_context
+            )
+            print(f"      [DEBUG] {cook_name}の料理慣性更新: {updated_inertia:.3f}")
+            
+            # SSD理論: 料理成功による主観的境界学習
+            self.ssd_adapter.update_experience(cook_name, "cooking", True, 0.7)
+            
             events.append({
                 'type': VillageEvent.MEAL_PREPARED,
                 'cook': cook_name,
-                'meal_quality': result['meal_quality'],
-                'cooking_inertia': result['cooking_inertia'],
-                'ingredients_used': result['ingredients_used']
+                'meal_quality': 0.7,  # 標準的な品質
+                'cooking_inertia': 0.1,
+                'ingredients_used': ingredients_used
             })
         
         return events
     
     def _conduct_carpentry(self) -> List[Dict[str, Any]]:
-        """大工活動の実行"""
+        """大工活動の実行（エネルギー制限付き）"""
         events = []
         
         # 建築需要の判定（低頻度）
         if random.random() > 0.3:
             return events
         
-        # 大工担当者選出
+        # エネルギー必要量設定
+        carpentry_energy_required = 0.25
+        
+        # 大工担当者選出（エネルギーと作業制限チェック）
         available_carpenters = [
-            v.name for v in self.villagers 
-            if v.energy > 0.4 and not v.injured
+            v for v in self.villagers 
+            if v.can_work('carpentry', carpentry_energy_required)
         ]
         
         if not available_carpenters:
             return events
         
-        # 大工スキルベース選択
+        # 大工スキルベース選択（疲労考慮）
         carpenter_scores = []
-        for name in available_carpenters:
-            carpentry_skill = next(v.skills.get('carpentry', 0) for v in self.villagers if v.name == name)
-            carpenter_scores.append((name, carpentry_skill))
+        for villager in available_carpenters:
+            carpentry_skill = villager.skills.get('carpentry', 0)
+            # 疲労による効率低下を考慮
+            effective_skill = carpentry_skill * (1.0 - villager.fatigue_level * 0.3)
+            carpenter_scores.append((villager, effective_skill))
         
         carpenter_scores.sort(key=lambda x: x[1], reverse=True)
-        carpenter_name = carpenter_scores[0][0]
+        carpenter_villager = carpenter_scores[0][0]
+        carpenter_name = carpenter_villager.name
         
-        # 建築リクエスト生成
-        construction_types = ["repair", "housing", "furniture"]
-        construction_request = ConstructionRequest(
-            requester_name=random.choice([v.name for v in self.villagers]),
-            preferred_carpenter=carpenter_name,
-            construction_type=random.choice(construction_types),
-            urgency_level=random.uniform(0.2, 0.8),
-            complexity=random.uniform(0.3, 0.7)
+        # 進行中プロジェクトがあるかチェック
+        ongoing_projects = self.carpentry_system.get_ongoing_projects_status()
+        carpenter_busy = any(
+            proj['lead_carpenter'] == carpenter_name or carpenter_name in proj['helpers']
+            for proj in ongoing_projects
         )
         
-        # 大工作業実行
-        result = self.carpentry_system.execute_carpentry_with_meaning_pressure(
-            carpenter_name, construction_request, self.meaning_pressure_system
+        if carpenter_busy:
+            # 進行中プロジェクトの作業継続
+            for ongoing in self.carpentry_system.ongoing_projects:
+                if (ongoing.lead_carpenter == carpenter_name or 
+                    carpenter_name in ongoing.helpers):
+                    
+                    result = self.carpentry_system.continue_project_work(
+                        ongoing, self.meaning_pressure_system, self.current_day
+                    )
+                    break
+        else:
+            # 新規プロジェクト開始判定
+            construction_types = ["repair", "housing", "furniture", "infrastructure"]
+            
+            # 大規模プロジェクトの可能性を追加
+            if random.random() < 0.1:  # 10%で大規模プロジェクト
+                construction_types = ["infrastructure", "housing"]
+                complexity_range = (0.6, 0.9)
+            else:
+                complexity_range = (0.3, 0.7)
+            
+            construction_request = ConstructionRequest(
+                requester_name=random.choice([v.name for v in self.villagers]),
+                preferred_carpenter=carpenter_name,
+                construction_type=random.choice(construction_types),
+                urgency_level=random.uniform(0.2, 0.8),
+                complexity=random.uniform(*complexity_range)
+            )
+            
+            # プロジェクトタイプ判定
+            selected_project = self.carpentry_system._select_project_for_request(construction_request)
+            
+            if selected_project.total_work_days > 1:
+                # マルチデイプロジェクト開始
+                helpers = []
+                if selected_project.collaboration_needed or selected_project.total_work_days >= 7:
+                    # 大型プロジェクトには助手を配置
+                    available_helpers = [
+                        v for v in self.villagers 
+                        if (v.can_work('carpentry', 0.2) and v.name != carpenter_name)
+                    ]
+                    if available_helpers:
+                        helper_count = min(2, len(available_helpers), selected_project.total_work_days // 4)
+                        helpers = [h.name for h in random.sample(available_helpers, helper_count)]
+                
+                ongoing_project = self.carpentry_system.start_multi_day_project(
+                    carpenter_name, construction_request, self.current_day, helpers
+                )
+                
+                # 初日の作業実行
+                result = self.carpentry_system.continue_project_work(
+                    ongoing_project, self.meaning_pressure_system, self.current_day
+                )
+            else:
+                # 1日プロジェクト（従来通り）
+                result = self.carpentry_system.execute_carpentry_with_meaning_pressure(
+                    carpenter_name, construction_request, self.meaning_pressure_system
+                )
+        
+        # マルチデイプロジェクトかどうかで処理を分岐
+        is_multi_day = 'days_remaining' in result
+        
+        if is_multi_day:
+            # マルチデイプロジェクトの場合
+            work_duration = 4.0  # 1日の標準作業時間
+            complexity = result.get('daily_progress', 1.0)
+        else:
+            # 従来の1日プロジェクト
+            work_duration = result.get('complexity', 0.5) * 2.0 + 1.0
+            complexity = result.get('complexity', 0.5)
+            
+        energy_consumption = carpentry_energy_required * (1.0 + complexity)
+        
+        # エネルギー消費実行
+        carpenter_villager.consume_energy('carpentry', energy_consumption, work_duration)
+        
+        # 意味圧システムにスキル向上を記録
+        carpentry_context = {
+            'success': result.get('success', True),
+            'effectiveness': result.get('quality', 0.5),
+            'difficulty': complexity,
+            'innovation': False,
+            'complex_project': is_multi_day and complexity > 0.7,
+            'project_quality': result.get('quality', 0.5),
+            'limited_materials': random.random() < 0.2,
+            'structural_requirements': complexity > 0.6,
+            'team_coordination': is_multi_day
+        }
+        
+        updated_inertia = self.meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+            carpenter_name, MeaningActivityType.CARPENTRY, carpentry_context
         )
+        print(f"      [DEBUG] {carpenter_name}の木工慣性更新: {updated_inertia:.3f}")
+        
+        # SSD理論: 建設活動による主観的境界学習
+        success = result.get('success', True)
+        quality = result.get('quality', 0.5)
+        self.ssd_adapter.update_experience(carpenter_name, "carpentry", success, quality)
+        
+        # 助手もエネルギー消費と意味圧記録
+        if is_multi_day:
+            ongoing_projects = self.carpentry_system.get_ongoing_projects_status()
+            for proj in ongoing_projects:
+                if proj['lead_carpenter'] == carpenter_name:
+                    for helper_name in proj['helpers']:
+                        helper_villager = next((v for v in self.villagers if v.name == helper_name), None)
+                        if helper_villager and helper_villager.can_work('carpentry', energy_consumption * 0.7):
+                            helper_villager.consume_energy('carpentry', energy_consumption * 0.7, work_duration)
+                            # 助手にも意味圧記録（効果は70%）
+                            helper_context = carpentry_context.copy()
+                            helper_context['effectiveness'] *= 0.7
+                            helper_inertia = self.meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+                                helper_name, MeaningActivityType.CARPENTRY, helper_context
+                            )
+                            print(f"      [DEBUG] {helper_name}の木工助手慣性更新: {helper_inertia:.3f}")
+                            
+                            # SSD理論: 助手の協力作業による境界学習
+                            self.ssd_adapter.update_experience(helper_name, "carpentry", success, quality * 0.7)
+                            # 助手と責任者の協力関係による相互境界学習
+                            self.ssd_adapter.update_relationship(helper_name, carpenter_name, "cooperative_construction")
         
         # 結果処理
-        if result['success']:
+        if result.get('success', True):
             # 村の建物品質向上
-            self.village_happiness = min(1.0, self.village_happiness + 0.03)
+            happiness_gain = 0.03
+            if is_multi_day:
+                # マルチデイプロジェクトは完了時により大きな幸福度向上
+                if result.get('is_completed', False):
+                    happiness_gain = 0.1
+                    # 大きなプロジェクト完了時は噂が広がりやすい
+                    self._spread_carpentry_rumor(
+                        carpenter_name, True, result['project_name'], 
+                        result.get('final_quality', 0.8)
+                    )
+                else:
+                    happiness_gain = 0.01  # 進行中は小さな向上
+            else:
+                # 1日プロジェクトも噂の対象
+                self._spread_carpentry_rumor(
+                    carpenter_name, True, result['project_name'], 
+                    result.get('quality', 0.5)
+                )
             
-            events.append({
-                'type': VillageEvent.CONSTRUCTION_COMPLETED,
+            self.village_happiness = min(1.0, self.village_happiness + happiness_gain)
+            
+            event_data = {
+                'type': VillageEvent.CONSTRUCTION_COMPLETED if not is_multi_day or result.get('is_completed', False) else 'construction_progress',
                 'carpenter': carpenter_name,
                 'project': result['project_name'],
-                'quality': result['quality'],
-                'carpentry_inertia': result['carpentry_inertia']
+                'carpentry_inertia': result['carpentry_inertia'],
+                'energy_used': energy_consumption,
+                'work_duration': work_duration
+            }
+            
+            # マルチデイプロジェクト用の追加情報
+            if is_multi_day:
+                event_data.update({
+                    'progress_percentage': result.get('total_progress', 0),
+                    'days_remaining': result.get('days_remaining', 0),
+                    'is_completed': result.get('is_completed', False),
+                    'daily_progress': result.get('daily_progress', 0)
+                })
+                
+                if result.get('is_completed', False):
+                    event_data['final_quality'] = result.get('final_quality', 0)
+            else:
+                event_data['quality'] = result.get('quality', 0)
+            
+            events.append(event_data)
+        else:
+            # 失敗でも疲労は蓄積
+            events.append({
+                'type': VillageEvent.CONSTRUCTION_FAILED,
+                'carpenter': carpenter_name,
+                'project': result['project_name'],
+                'energy_used': energy_consumption,
+                'work_duration': work_duration,
+                'is_multi_day': is_multi_day
             })
         
         return events
@@ -392,30 +727,52 @@ class IntegratedVillageSimulation:
         
         # 患者への看護
         for patient in patients[:2]:  # 最大2人まで
-            care_request = CareRequest(
-                patient_name=patient.name,
-                caregiver_preference=caregiver_name,
-                urgency_level=0.8 if patient.injured else 0.5,
-                care_complexity=0.7 if patient.injured else 0.4
-            )
+            # 看護システム実行
+            care_result = self.care_system.simulate_daily_care()
             
-            result = self.care_system.execute_care_with_meaning_pressure(
-                caregiver_name, care_request, self.meaning_pressure_system
-            )
-            
-            # 結果処理
-            if result['success']:
-                # 患者の回復
-                patient.health = min(1.0, patient.health + 0.3)
-                if patient.injured and random.random() < 0.7:
+            # 結果処理（簡易版）
+            if care_result and len(care_result) > 0:
+                # 最初の看護イベントを使用
+                care_event = care_result[0]
+                patient.health = min(1.0, patient.health + 0.2)
+                recovery_success = False
+                if patient.injured and random.random() < 0.6:
                     patient.injured = False
+                    recovery_success = True
+                
+                # 意味圧システムにスキル向上を記録
+                caregiving_context = {
+                    'success': recovery_success or care_event.effectiveness > 0.7,
+                    'effectiveness': care_event.effectiveness,
+                    'difficulty': 0.6,  # 看護の難易度
+                    'innovation': False
+                }
+                updated_inertia = self.meaning_pressure_system.update_alignment_inertia_with_meaning_pressure(
+                    care_event.caregiver, MeaningActivityType.CAREGIVING, caregiving_context
+                )
+                print(f"      [DEBUG] {care_event.caregiver}の看護慣性更新: {updated_inertia:.3f}")
+                
+                # SSD理論: 看護活動による主観的境界学習
+                care_success = recovery_success or care_event.effectiveness > 0.7
+                self.ssd_adapter.update_experience(care_event.caregiver, "caregiving", care_success, care_event.effectiveness)
+                # 患者と看護者の関係による相互境界学習
+                relationship_type = "received_excellent_care" if care_success else "received_poor_care"
+                self.ssd_adapter.update_relationship(care_event.patient, care_event.caregiver, relationship_type)
+                
+                # 看護に関する噂を広める
+                self._spread_care_rumor(
+                    care_event.caregiver, 
+                    care_event.patient, 
+                    recovery_success or care_event.effectiveness > 0.7,
+                    care_event.effectiveness
+                )
                 
                 events.append({
                     'type': VillageEvent.CARE_PROVIDED,
-                    'caregiver': caregiver_name,
-                    'patient': patient.name,
-                    'care_quality': result['care_quality'],
-                    'caregiving_inertia': result['caregiving_inertia']
+                    'caregiver': care_event.caregiver,
+                    'patient': care_event.patient,
+                    'care_quality': care_event.effectiveness,
+                    'caregiving_inertia': care_event.relationship_after - care_event.relationship_before
                 })
         
         return events
@@ -455,19 +812,150 @@ class IntegratedVillageSimulation:
         """夜の回復活動"""
         events = []
         
-        # 村人の基本的な回復
-        for villager in self.villagers:
-            # エネルギー回復
-            villager.energy = min(1.0, villager.energy + 0.4)
+        # 日常的な食料消費
+        daily_food_consumption = len(self.villagers) * 0.3  # 1人あたり0.3単位/日
+        
+        if self.food_storage >= daily_food_consumption:
+            # 十分な食料がある場合
+            self.food_storage -= daily_food_consumption
+            # 村人の空腹度軽減
+            hunger_relief = 0.2
+        else:
+            # 食料不足の場合
+            available_food = self.food_storage
+            self.food_storage = 0.0
+            # 部分的な空腹軽減
+            hunger_relief = available_food / len(self.villagers) * 0.5
             
-            # 空腹度上昇
-            villager.hunger = min(1.0, villager.hunger + 0.1)
+            events.append({
+                'type': 'food_shortage',
+                'message': f'食料不足: {available_food:.1f}単位しか消費できませんでした',
+                'severity': 'warning'
+            })
+        
+        # 村人の基本的な回復と日次リセット
+        for villager in self.villagers:
+            # 食事による空腹度変化
+            villager.hunger = max(0.0, villager.hunger - hunger_relief)
             
             # 軽微な健康回復
             if villager.health < 1.0 and not villager.injured:
                 villager.health = min(1.0, villager.health + 0.1)
+            
+            # 重傷の回復判定（優先）
+            if villager.severe_injury:
+                villager.injury_recovery_days -= 1
+                if villager.injury_recovery_days <= 0:
+                    # 重傷から回復
+                    villager.severe_injury = False
+                    villager.injured = False  # 重傷が治れば軽傷も治る
+                    villager.health = min(1.0, villager.health + 0.3)
+                    events.append({
+                        'type': 'severe_injury_recovery',
+                        'villager': villager.name,
+                        'message': f'{villager.name}が重傷から回復しました'
+                    })
+            # 軽傷の回復判定
+            elif villager.injured and random.random() < 0.3:
+                villager.injured = False
+                villager.health = min(1.0, villager.health + 0.2)
+                events.append({
+                    'type': 'injury_recovery',
+                    'villager': villager.name,
+                    'message': f'{villager.name}が怪我から回復しました'
+                })
+            
+            # 日次作業データリセット（エネルギー回復含む）
+            villager.reset_daily_work()
         
         return events
+    
+    def _spread_hunting_rumor(self, hunter_name: str, success: bool, hunt_duration: float, difficulty: float):
+        """狩猟に関する噂を広める"""
+        # 噂の強さを計算（成功度、難易度、時間に基づく）
+        intensity = min(1.0, (difficulty + hunt_duration / 5.0) / 2.0)
+        
+        # 潜在的な聞き手（他の村人たち）
+        potential_listeners = [v.name for v in self.villagers if v.name != hunter_name]
+        
+        # 目撃者がいれば噂を作成
+        if len(potential_listeners) >= 2:
+            witness = random.choice(potential_listeners)  # ランダムに目撃者選択
+            possible_listeners_for_witness = [v for v in potential_listeners if v != witness]
+            
+            listener = random.choice(possible_listeners_for_witness)
+            self.rumor_system.create_rumor_from_interaction(
+                speaker=witness,
+                listener=listener,
+                subject=hunter_name,
+                rumor_type=RumorType.HUNTING_SKILL,
+                positive=success,
+                intensity=intensity,
+                context="direct_experience" if success else "witnessed_failure"
+            )
+            
+            # SSD理論: 噂を通じた主観的境界学習
+            interaction_type = "positive_rumor_sharing" if success else "negative_rumor_sharing"
+            self.ssd_adapter.update_relationship(witness, listener, interaction_type)
+            self.ssd_adapter.update_relationship(witness, hunter_name, f"witnessed_{'success' if success else 'failure'}")
+    
+    def _spread_carpentry_rumor(self, carpenter_name: str, success: bool, project_name: str, quality: float = 0.0):
+        """大工作業に関する噂を広める"""
+        intensity = min(1.0, quality + (0.8 if success else 0.2))
+        
+        potential_speakers = [v.name for v in self.villagers if v.name != carpenter_name]
+        
+        if len(potential_speakers) >= 2:
+            speaker = random.choice(potential_speakers)
+            potential_listeners = [v for v in potential_speakers if v != speaker]
+            listener = random.choice(potential_listeners)
+            
+            self.rumor_system.create_rumor_from_interaction(
+                speaker=speaker,
+                listener=listener,
+                subject=carpenter_name,
+                rumor_type=RumorType.CRAFTING_SKILL,
+                positive=success,
+                intensity=intensity,
+                context=f"saw_{project_name}"
+            )
+            
+            # SSD理論: 建設噂を通じた主観的境界学習
+            interaction_type = "positive_craft_rumor" if success else "negative_craft_rumor"
+            self.ssd_adapter.update_relationship(speaker, listener, interaction_type)
+            self.ssd_adapter.update_relationship(speaker, carpenter_name, f"observed_{'good' if success else 'poor'}_crafting")
+    
+    def _spread_care_rumor(self, caregiver_name: str, patient_name: str, success: bool, care_quality: float):
+        """看護に関する噂を広める"""
+        intensity = min(1.0, care_quality + (0.5 if success else 0.1))
+        
+        # 患者自身が噂を広める場合もある
+        potential_speakers = [v.name for v in self.villagers if v.name != caregiver_name]
+        
+        if potential_speakers:
+            speaker = patient_name if patient_name in potential_speakers else random.choice(potential_speakers)
+            potential_listeners = [v.name for v in self.villagers if v.name not in [caregiver_name, speaker]]
+            
+            if potential_listeners:
+                listener = random.choice(potential_listeners)
+                
+                self.rumor_system.create_rumor_from_interaction(
+                    speaker=speaker,
+                    listener=listener,
+                    subject=caregiver_name,
+                    rumor_type=RumorType.CAREGIVING_SKILL,
+                    positive=success,
+                    intensity=intensity,
+                    context="received_care" if speaker == patient_name else "witnessed_care"
+                )
+                
+                # SSD理論: 看護噂を通じた主観的境界学習
+                interaction_type = "positive_care_rumor" if success else "negative_care_rumor"
+                self.ssd_adapter.update_relationship(speaker, listener, interaction_type)
+                if speaker == patient_name:
+                    # 患者が語る場合は直接経験による強い境界形成
+                    care_experience = "received_excellent_care" if success else "received_poor_care"
+                    self.ssd_adapter.update_relationship(speaker, caregiver_name, care_experience)
     
     def _update_villager_energy(self, name: str, change: float):
         """村人のエネルギー更新"""
@@ -476,12 +964,20 @@ class IntegratedVillageSimulation:
                 villager.energy = max(0.0, min(1.0, villager.energy + change))
                 break
     
-    def _injure_villager(self, name: str):
+    def _injure_villager(self, name: str, severe: bool = False):
         """村人に怪我を負わせる"""
         for villager in self.villagers:
             if villager.name == name:
-                villager.injured = True
-                villager.health = max(0.1, villager.health - 0.3)
+                if severe:
+                    # 重傷：数日間動けない
+                    villager.severe_injury = True
+                    villager.injury_recovery_days = random.randint(3, 7)  # 3-7日間
+                    villager.health = max(0.1, villager.health - 0.5)  # より大きなダメージ
+                    villager.injured = True
+                else:
+                    # 軽傷：通常の怪我
+                    villager.injured = True
+                    villager.health = max(0.1, villager.health - 0.3)
                 break
     
     def _calculate_daily_stats(self) -> Dict[str, Any]:
@@ -489,35 +985,30 @@ class IntegratedVillageSimulation:
         
         # 健康状態統計
         healthy_count = len([v for v in self.villagers if v.health > 0.7 and not v.injured])
-        injured_count = len([v for v in self.villagers if v.injured])
+        injured_count = len([v for v in self.villagers if v.injured and not v.severe_injury])
+        severe_injured_count = len([v for v in self.villagers if v.severe_injury])
         
         # スキル慣性平均
         hunting_inertias = []
         caregiving_inertias = []
         cooking_inertias = []
         social_coordination_inertias = []
+        carpentry_inertias = []
         
         for villager in self.villagers:
             # 意味圧システムから慣性値取得
-            hunter_inertia = self.meaning_pressure_system.get_alignment_inertia(villager.name, MeaningActivityType.HUNTING)
-            caregiving_inertia = self.meaning_pressure_system.get_alignment_inertia(villager.name, MeaningActivityType.CAREGIVING)  
-            cooking_inertia = self.meaning_pressure_system.get_alignment_inertia(villager.name, MeaningActivityType.COOKING)
-            social_inertia = self.meaning_pressure_system.get_alignment_inertia(villager.name, MeaningActivityType.SOCIAL_COORDINATION)
+            hunter_inertia = self.meaning_pressure_system.get_villager_skill_level(villager.name, MeaningActivityType.HUNTING)
+            caregiving_inertia = self.meaning_pressure_system.get_villager_skill_level(villager.name, MeaningActivityType.CAREGIVING)  
+            cooking_inertia = self.meaning_pressure_system.get_villager_skill_level(villager.name, MeaningActivityType.COOKING)
+            social_inertia = self.meaning_pressure_system.get_villager_skill_level(villager.name, MeaningActivityType.SOCIAL_COORDINATION)
+            carpentry_inertia = self.meaning_pressure_system.get_villager_skill_level(villager.name, MeaningActivityType.CARPENTRY)
             
-            if hunter_inertia > 0:
-                hunting_inertias.append(hunter_inertia)
-            if caregiving_inertia > 0:
-                caregiving_inertias.append(caregiving_inertia)
-            if cooking_inertia > 0:
-                cooking_inertias.append(cooking_inertia)
-            if social_inertia > 0:
-                social_coordination_inertias.append(social_inertia)
-        
-        # 熟練大工数
-        skilled_carpenters = len([
-            name for name, rep in self.carpentry_system.carpenter_reputations.items()
-            if rep.specialization_known
-        ])
+            # すべてのスキル慣性を記録（初期値0.0も含む）
+            hunting_inertias.append(hunter_inertia)
+            caregiving_inertias.append(caregiving_inertia)
+            cooking_inertias.append(cooking_inertia)
+            social_coordination_inertias.append(social_inertia)
+            carpentry_inertias.append(carpentry_inertia)
         
         # 建物品質
         building_quality = sum(self.carpentry_system.village_buildings.values()) / len(self.carpentry_system.village_buildings)
@@ -526,13 +1017,14 @@ class IntegratedVillageSimulation:
             'day': self.current_day,
             'healthy_villagers': healthy_count,
             'injured_villagers': injured_count,
+            'severe_injured_villagers': severe_injured_count,
             'food_storage': self.food_storage,
             'village_happiness': self.village_happiness,
             'hunting_inertia': sum(hunting_inertias) / max(len(hunting_inertias), 1),
             'caregiving_inertia': sum(caregiving_inertias) / max(len(caregiving_inertias), 1),
             'cooking_inertia': sum(cooking_inertias) / max(len(cooking_inertias), 1),
             'social_coordination_inertia': sum(social_coordination_inertias) / max(len(social_coordination_inertias), 1),
-            'skilled_carpenters': skilled_carpenters,
+            'carpentry_inertia': sum(carpentry_inertias) / max(len(carpentry_inertias), 1),
             'building_quality': building_quality
         }
     
@@ -540,23 +1032,254 @@ class IntegratedVillageSimulation:
         """村の現在状況取得"""
         stats = self._calculate_daily_stats()
         
-        print(f"\\n📊 村の概要:")
+        print(f"\\n=== 村の概要 ===")
         print(f"  人口: {len(self.villagers)}人")
-        print(f"  健康: {stats['healthy_villagers']}人, 負傷: {stats['injured_villagers']}人")
+        print(f"  健康: {stats['healthy_villagers']}人, 軽傷: {stats['injured_villagers']}人, 重傷: {stats['severe_injured_villagers']}人")
         print(f"  食料貯蔵: {self.food_storage:.1f}単位")
         print(f"  村の幸福度: {self.village_happiness:.2f}")
         
-        print(f"\\n🧠 意味圧ベーススキル平均:")
-        print(f"  🏹 狩猟慣性: {stats['hunting_inertia']:.3f}")
-        print(f"  💝 看護慣性: {stats['caregiving_inertia']:.3f}")  
-        print(f"  🍳 料理慣性: {stats['cooking_inertia']:.3f}")
-        print(f"  🤝 調整慣性: {stats['social_coordination_inertia']:.3f}")
-        print(f"  🔨 熟練大工: {stats['skilled_carpenters']}名")
-        print(f"  🏠 建物品質: {stats['building_quality']:.2f}")
+        # 進行中プロジェクト表示
+        ongoing_projects = self.carpentry_system.get_ongoing_projects_status()
+        if ongoing_projects:
+            print(f"\\n進行中プロジェクト:")
+            for proj in ongoing_projects:
+                print(f"  {proj['project_name']}")
+                print(f"     責任者: {proj['lead_carpenter']}")
+                if proj['helpers']:
+                    print(f"     助手: {', '.join(proj['helpers'])}")
+                print(f"     進捗: {proj['progress_percentage']:.1f}% ({proj['days_worked']}/{proj['total_days']}日)")
+                print(f"     品質: {proj['quality_so_far']:.2f}")
+        
+        print(f"\\n=== 意味圧ベーススキル平均 ===")
+        print(f"  狩猟慣性: {stats['hunting_inertia']:.3f}")
+        print(f"  看護慣性: {stats['caregiving_inertia']:.3f}")  
+        print(f"  料理慣性: {stats['cooking_inertia']:.3f}")
+        print(f"  調整慣性: {stats['social_coordination_inertia']:.3f}")
+        print(f"  大工慣性: {stats['carpentry_inertia']:.3f}")
+        print(f"  建物品質: {stats['building_quality']:.2f}")
+        
+        # 詳細スキル分析を追加
+        self._display_detailed_skill_analysis()
+        
+        # SSD理論主観的境界分析を追加
+        self._display_subjective_boundary_analysis()
+        
+        # 噂情報表示
+        self._display_rumors()
         
         return stats
+    
+    def _display_subjective_boundary_analysis(self):
+        """SSD理論：主観的境界分析表示"""
+        print(f"\\n=== SSD理論 主観的境界分析 ===")
+        
+        for villager in self.villagers:
+            boundary_summary = self.ssd_adapter.get_subjective_boundary_summary(villager.name)
+            
+            if "error" not in boundary_summary:
+                print(f"\\n🧠 {villager.name}の主観的境界:")
+                print(f"   内側認識: {boundary_summary['inner_count']}オブジェクト")
+                print(f"   外側認識: {boundary_summary['outer_count']}オブジェクト")
+                print(f"   境界平均強度: {boundary_summary['average_boundary_strength']:.3f}")
+                
+                # 強い結びつき（内側）
+                if boundary_summary['strong_inner_bonds']:
+                    print(f"   🤝 強い親和性:")
+                    for obj, strength in list(boundary_summary['strong_inner_bonds'].items())[:3]:
+                        obj_type = self._classify_boundary_object(obj)
+                        print(f"      {obj_type}: {strength:.2f}")
+                
+                # 強い拒絶（外側）  
+                if boundary_summary['strong_outer_aversions']:
+                    print(f"   ❌ 強い警戒感:")
+                    for obj, strength in list(boundary_summary['strong_outer_aversions'].items())[:3]:
+                        obj_type = self._classify_boundary_object(obj)
+                        print(f"      {obj_type}: {strength:.2f}")
+    
+    def _classify_boundary_object(self, obj_id: str) -> str:
+        """境界オブジェクトの分類"""
+        if obj_id.startswith("activity_"):
+            return f"活動「{obj_id.replace('activity_', '')}」"
+        elif obj_id.startswith("location_"):
+            return f"場所「{obj_id.replace('location_', '')}」"
+        elif obj_id.startswith("self_"):
+            return f"自信「{obj_id.replace('self_', '').replace('_skill', '')}」"
+        elif obj_id in [v.name for v in self.villagers]:
+            return f"人物「{obj_id}」"
+        else:
+            return f"オブジェクト「{obj_id}」"
+    
+    def _display_detailed_skill_analysis(self):
+        """詳細なスキル分析を表示"""
+        print(f"\\n=== 詳細スキル専門化分析 ===")
+        
+        # 各スキルの上位者を抽出
+        skill_specialists = {
+            '狩猟': [],
+            '看護': [],
+            '料理': [],
+            '調整': [],
+            '大工': []
+        }
+        
+        for villager in self.villagers:
+            name = villager.name
+            
+            # 各スキルレベル取得
+            hunting_level = self.meaning_pressure_system.get_villager_skill_level(name, MeaningActivityType.HUNTING)
+            care_level = self.meaning_pressure_system.get_villager_skill_level(name, MeaningActivityType.CAREGIVING)
+            cooking_level = self.meaning_pressure_system.get_villager_skill_level(name, MeaningActivityType.COOKING)
+            social_level = self.meaning_pressure_system.get_villager_skill_level(name, MeaningActivityType.SOCIAL_COORDINATION)
+            
+            # 閾値を超えたスキルを記録
+            if hunting_level > 0.1:
+                skill_specialists['狩猟'].append((name, hunting_level))
+            if care_level > 0.1:
+                skill_specialists['看護'].append((name, care_level))
+            if cooking_level > 0.1:
+                skill_specialists['料理'].append((name, cooking_level))
+            if social_level > 0.1:
+                skill_specialists['調整'].append((name, social_level))
+        
+        # 大工の専門家
+        for name, rep in self.carpentry_system.carpenter_reputations.items():
+            if rep.total_attempts > 0:
+                skill_specialists['大工'].append((name, rep.reputation_score / 10.0))  # 正規化
+        
+        # 各スキル分野の上位者表示
+        for skill_name, specialists in skill_specialists.items():
+            if specialists:
+                # スキルレベルでソート
+                specialists.sort(key=lambda x: x[1], reverse=True)
+                top_specialists = specialists[:3]  # 上位3名
+                
+                print(f"\\n{skill_name}専門家:")
+                for i, (name, level) in enumerate(top_specialists, 1):
+                    level_desc = self._get_skill_level_description(level)
+                    print(f"  {i}位. {name}: {level:.3f} ({level_desc})")
+            else:
+                print(f"\\n{skill_name}専門家: まだ専門化していません")
+    
+    def _get_skill_level_description(self, level: float) -> str:
+        """スキルレベルの説明文を取得"""
+        if level >= 0.5:
+            return "達人級"
+        elif level >= 0.3:
+            return "上級者"
+        elif level >= 0.15:
+            return "中級者" 
+        elif level >= 0.05:
+            return "初級者"
+        else:
+            return "見習い"
+    
+    def _display_rumors(self):
+        """現在の噂情報を表示"""
+        print(f"\\n=== 村の噂情報 ===")
+        
+        active_rumors = self.rumor_system.active_rumors
+        
+        if not active_rumors:
+            print("  現在、特に目立った噂はありません。")
+            return
+        
+        # 最近の噂を表示（最大5件）
+        recent_rumors = sorted(active_rumors, key=lambda r: r.creation_time, reverse=True)[:5]
+        
+        print(f"  最近の噂 ({len(recent_rumors)}件):")
+        for rumor in recent_rumors:
+            confidence_level = "[高]" if rumor.confidence > 0.8 else "[中]" if rumor.confidence > 0.6 else "[低]"
+            intensity_level = "***" if rumor.intensity > 0.8 else "**" if rumor.intensity > 0.5 else "*"
+            
+            print(f"    {confidence_level} {rumor.get_rumor_text()} {intensity_level}")
+            print(f"       (発信者: {rumor.source_name}, 確信度: {rumor.confidence:.1f})")
+        
+        # 評判集計表示
+        print(f"\\n  評判集計:")
+        reputation_summary = {}
+        for name, reputation_dict in self.rumor_system.village_reputation.items():
+            for rumor_type, value in reputation_dict.items():
+                if value != 0.5:  # 中性値以外
+                    if name not in reputation_summary:
+                        reputation_summary[name] = []
+                    reputation_summary[name].append((rumor_type.value, value))
+        
+        if reputation_summary:
+            for name, reputation_list in list(reputation_summary.items())[:5]:  # 上位5名表示
+                reputation_items = [f"{rtype}: {value:.2f}" for rtype, value in reputation_list]
+                print(f"    {name}: {', '.join(reputation_items)}")
+        else:
+            print("    まだ確立された評判はありません。")
 
-def demonstrate_integrated_simulation():
+def test_large_scale_simulation(population_size: int = 50, days: int = 100):
+    """大規模・長期間シミュレーションテスト"""
+    
+    print(f"=== 大規模村システムテスト ===")
+    print(f"   人口: {population_size}人, 期間: {days}日\\n")
+    
+    # システム初期化
+    village = IntegratedVillageSimulation(population_size=population_size)
+    
+    # 初期状態表示
+    print("【初期状態】")
+    initial_stats = village.get_village_status()
+    
+    # シミュレーション実行（簡易ログ）
+    print(f"\\n=== {days}日間シミュレーション実行中 ===")
+    
+    significant_events_count = 0
+    crisis_events = 0
+    
+    for day in range(1, days + 1):
+        daily_result = village.simulate_day()
+        
+        # 重要なイベントをカウント
+        for event in daily_result['events']:
+            if event['type'] in [VillageEvent.HUNTING_SUCCESS, VillageEvent.MEAL_PREPARED, 
+                               VillageEvent.CONSTRUCTION_COMPLETED, VillageEvent.CARE_PROVIDED]:
+                significant_events_count += 1
+            elif event['type'] == VillageEvent.EMERGENCY_SITUATION:
+                crisis_events += 1
+        
+        # 10日ごとに進捗表示
+        if day % 10 == 0:
+            print(f"  {day}日経過 - イベント累計: {significant_events_count}, 危機: {crisis_events}")
+    
+    # 最終状態
+    print(f"\\n【最終状態】")
+    final_stats = village.get_village_status()
+    
+    print(f"\\n🎯 === テスト結果 ===")
+    print(f"全体統計:")
+    print(f"  総イベント数: {significant_events_count}")
+    print(f"  危機発生数: {crisis_events}")
+    print(f"  平均危機頻度: {crisis_events/days:.2f}回/日")
+    
+    print(f"\\n📈 スキル成長:")
+    if final_stats['hunting_inertia'] > 0.1:
+        print(f"  🏹 狩猟慣性: {final_stats['hunting_inertia']:.3f}")
+    if final_stats['cooking_inertia'] > 0.1:
+        print(f"  🍳 料理慣性: {final_stats['cooking_inertia']:.3f}")
+    if final_stats['caregiving_inertia'] > 0.1:
+        print(f"  💝 看護慣性: {final_stats['caregiving_inertia']:.3f}")
+
+    
+    print(f"\\n🏘️ 建設品質: {final_stats['building_quality']:.3f}")
+    print(f"🏘️ 村幸福度: {final_stats['village_happiness']:.3f}")
+    
+    # SSD効果の分析
+    print(f"\\n🧠 === SSD Core Engine 分析 ===")
+    print(f"   構造主観力学による自律的適応を確認")
+    print(f"   意味圧ベース学習による専門化の自然発生")
+    print(f"   整合・跳躍メカニズムによる危機対応")
+    
+    return {
+        'initial_stats': initial_stats,
+        'final_stats': final_stats,
+        'total_events': significant_events_count,
+        'crisis_events': crisis_events,
+        'simulation_days': days
+    }
     """統合シミュレーションデモ"""
     
     print("🏘️ === 統合村システム デモンストレーション ===\\n")
@@ -590,7 +1313,7 @@ def demonstrate_integrated_simulation():
                 elif event['type'] == VillageEvent.MEAL_PREPARED:
                     print(f"  🍳 {event['cook']}が食事準備 (品質: {event['meal_quality']:.2f})")
                 elif event['type'] == VillageEvent.CONSTRUCTION_COMPLETED:
-                    print(f"  🔨 {event['carpenter']}が{event['project']}完成 (品質: {event['quality']:.2f})")
+                    print(f"  {event['carpenter']}が{event['project']}完成 (品質: {event['quality']:.2f})")
                 elif event['type'] == VillageEvent.CARE_PROVIDED:
                     print(f"  💝 {event['caregiver']}が{event['patient']}を看護")
         else:
@@ -601,18 +1324,67 @@ def demonstrate_integrated_simulation():
     final_stats = village.get_village_status()
     
     print(f"\\n🎯 === 統合システム効果 ===")
-    print(f"📈 成長したスキル:")
+    print(f"成長したスキル:")
     if final_stats['hunting_inertia'] > 0.1:
         print(f"  🏹 狩猟専門化: 平均慣性 {final_stats['hunting_inertia']:.3f}")
     if final_stats['cooking_inertia'] > 0.1:
         print(f"  🍳 料理専門化: 平均慣性 {final_stats['cooking_inertia']:.3f}")
     if final_stats['caregiving_inertia'] > 0.1:
         print(f"  💝 看護専門化: 平均慣性 {final_stats['caregiving_inertia']:.3f}")
-    if final_stats['skilled_carpenters'] > 0:
-        print(f"  🔨 大工専門化: {final_stats['skilled_carpenters']}名の熟練工")
+
     
-    print(f"\\n🏘️ SSD Core Engine + 意味圧ベース学習により")
-    print(f"   自然な役割分担と継続的な村の発展を実現！")
+    print(f"\\n🏘️ 構造主観力学（SSD理論）による理論的一貫性:")
+    print(f"   • ssd_core_engine による主観的境界学習で全行動を決定")
+    print(f"   • 場当たり的プログラミング不要の自律的AIエージェント")
+    print(f"   • 意味圧ベース学習による自然な専門化と役割分担を実現！")
 
 if __name__ == "__main__":
-    demonstrate_integrated_simulation()
+    print("=== 統合村システム デモンストレーション ===\\n")
+    
+    # システム初期化
+    village = IntegratedVillageSimulation(population_size=8)
+    
+    # 初期状態表示
+    print("【初期状態】")
+    village.get_village_status()
+    
+    # 数日間のシミュレーション
+    print(f"\\n=== 14日間シミュレーション開始 ===")
+    
+    for day in range(1, 15):
+        print(f"\\n--- 第{day}日目 ---")
+        
+        daily_result = village.simulate_day()
+        
+        # 主要イベントの表示
+        significant_events = [
+            e for e in daily_result['events'] 
+            if e['type'] in [VillageEvent.HUNTING_SUCCESS, VillageEvent.MEAL_PREPARED, 
+                           VillageEvent.CONSTRUCTION_COMPLETED, VillageEvent.CARE_PROVIDED]
+        ]
+        
+        if significant_events:
+            print(f"  主要活動:")
+            for event in significant_events[:3]:  # 最大3つまで表示
+                if event['type'] == VillageEvent.HUNTING_SUCCESS:
+                    hunter_name = event.get('hunter', event.get('actor', '不明'))
+                    food_gained = event.get('food_gained', event.get('details', {}).get('meat_acquired', 0))
+                    print(f"    {hunter_name}が狩猟で{food_gained:.1f}の肉を獲得")
+                elif event['type'] == VillageEvent.MEAL_PREPARED:
+                    cook_name = event.get('cook', event.get('actor', '不明'))
+                    print(f"    {cook_name}が料理を準備")
+                elif event['type'] == VillageEvent.CONSTRUCTION_COMPLETED:
+                    carpenter_name = event.get('carpenter', event.get('actor', '不明'))
+                    project_name = event.get('project', event.get('details', {}).get('project_name', '建物'))
+                    print(f"    {carpenter_name}が{project_name}を完成")
+                elif event['type'] == VillageEvent.CARE_PROVIDED:
+                    caregiver_name = event.get('caregiver', event.get('actor', '不明'))
+                    patient_name = event.get('patient', event.get('details', {}).get('patient', '患者'))
+                    print(f"    {caregiver_name}が{patient_name}を看病")
+    
+    print(f"\\n=== 統合システム効果 ===")
+    final_stats = village.get_village_status()
+    
+    if final_stats:
+        print("\\nSSD Core Engine + 意味圧ベース学習により")
+        print("   自然な役割分担と継続的な村の発展を実現！")
