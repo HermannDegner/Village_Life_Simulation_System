@@ -1,6 +1,12 @@
 # 🏘️ 構造主観力学（SSD理論）ベース村シミュレーションシステム
 
-## 🚀 クイックスタート
+## 🚀 ├── 📖 docs/                          # 技術ドキュメント
+│   └── SSD_Implementation_Guide.md  # SSD理論実装ガイド
+│
+└── 📋 ドキュメント
+    ├── README.md                     # このファイル
+    ├── README_ファイル整理.md         # 整理プロセス記録
+    └── 整理完了レポート.md            # 整理作業の完了報告スタート
 
 ### 👑 メインデモ実行
 ```bash
@@ -157,8 +163,16 @@ python systems/caregiving/relationship_care_system.py
 ### 📚 ドキュメント完備
 
 - `README.md`: このメインドキュメント
+- `docs/SSD_Implementation_Guide.md`: **SSD理論実装ガイド - 行動多様性拡大の設計原則**
 - `README_ファイル整理.md`: 整理プロセスの詳細記録
 - `整理完了レポート.md`: 整理作業の完了報告
+
+### 🎯 開発者向けリソース
+
+**SSD理論に基づくAI実装を学ぶには:**
+- 📖 [`docs/SSD_Implementation_Guide.md`](docs/SSD_Implementation_Guide.md) - 詳細な実装パターンとコード例
+- 🎮 `main_demo.py` - 動作するSSD理論システムの実例
+- 🏗️ `ssd_core_engine/` - 構造主観力学エンジンの実装
 
 ---
 
