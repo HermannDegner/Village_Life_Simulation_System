@@ -20,6 +20,10 @@ from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 
 # 統合システムのインポート
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.village_ssd_adapter import VillageSSDAdapter, update_alignment_inertia, manage_territory_relationship
 from core.village_meaning_pressure_system import VillageMeaningPressureSystem, ActivityType as MeaningActivityType
 from systems.carpentry.meaning_pressure_carpentry_system import MeaningPressureCarpentrySystem, ConstructionRequest, ConstructionType
